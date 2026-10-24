@@ -133,6 +133,35 @@ html, body {
 
 #backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.25); }
 
+.helper-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; }
+.helper-info { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.helper-row button { flex: none; }
+#hats button { padding: 6px 10px; }
+
+#stage { position: relative; }
+#tutorial {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: min(92%, 520px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(255, 248, 225, 0.96);
+  color: #3e2723;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 14px;
+  pointer-events: auto;
+}
+#tutorial .link { color: #6d4c41; flex: none; }
+#seeds button.greenhouse-only { border-style: dashed; opacity: 0.8; }
+#btn-music { padding: 2px 8px; margin-left: auto; }
+#btn-music + #btn-mute { margin-left: 0; }
+#btn-music.off { opacity: 0.45; }
+
 /* 手機：種子按鈕只顯示圖示和價錢；管理面板矮一點，內容用捲的 */
 @media (max-width: 760px), (pointer: coarse) {
   #seeds button { padding: 8px 12px; }

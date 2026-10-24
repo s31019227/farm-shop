@@ -24,9 +24,17 @@
     <span id="hud-order"></span>
     <span id="hud-room" class="hidden">房間 <b class="room-code"></b> <button class="btn-copy">複製邀請連結</button></span>
     <span id="hud-net" class="net"></span>
+    <button id="btn-music" title="背景音樂開關">🎵</button>
     <button id="btn-mute" title="音效開關">🔊</button>
   </header>
-  <main id="stage"><canvas id="game"></canvas></main>
+  <main id="stage">
+    <canvas id="game"></canvas>
+    <!-- 新手教學：第一、二天顯示，一步一步帶 -->
+    <div id="tutorial" class="hidden">
+      <span id="tut-text"></span>
+      <button id="tut-skip" class="link">跳過教學</button>
+    </div>
+  </main>
   <footer id="bar">
     <div id="seeds" class="group"></div>
     <div class="bar-right">
@@ -44,12 +52,13 @@
       <p id="price-desc" class="sheet-note"></p>
       <h4>⬆️ 升級</h4>
       <div id="upgrades" class="col"></div>
-      <h4>👨‍🌾 農場幫手</h4>
-      <p class="sheet-note">會看現在能種的作物，挑存貨最少的去種，順便澆水、收成、拿進貨架。雇用 $300，之後每天早上付工資 $25（錢不夠那天他就放假）。</p>
-      <button id="btn-worker"></button>
+      <h4>👨‍🌾 幫手（每天早上付工資，錢不夠那天就放假）</h4>
+      <div id="helpers" class="col"></div>
+      <h4>🎩 我的帽子（在結算畫面買新的）</h4>
+      <div id="hats" class="group"></div>
       <h4>🏆 目標</h4>
       <ul id="goals"></ul>
-      <div id="hint">種菜（記得去 💧 井打水）→ 收成上架 → 點加工機加工 → 點 💰 結帳。點隊友可以把身上的東西交給他。📋 訂單板交貨換獎金；解鎖和裝潢在每天的結算畫面。</div>
+      <div id="hint">種菜（記得去 💧 井打水、抓蟲、趕烏鴉）→ 收成上架 → 點加工機加工 → 點 💰 結帳。點隊友可以交東西給他，點小偷可以抓他，點池塘可以釣魚。巨無霸南瓜要兩個人一起點才搬得動。解鎖、動物、裝潢、設施、帽子在每天的結算畫面買。</div>
     </div>
   </footer>
 </div>
@@ -111,6 +120,10 @@
     <div id="sum-unlocks" class="col"></div>
     <h3>牧場動物</h3>
     <div id="sum-animals" class="col"></div>
+    <h3>設施和寵物</h3>
+    <div id="sum-facilities" class="col"></div>
+    <h3>帽子（買了大家都能戴）</h3>
+    <div id="sum-hats" class="col"></div>
     <h3>店面裝潢</h3>
     <div id="sum-decor" class="col"></div>
     <ul id="sum-list" class="plist"></ul>

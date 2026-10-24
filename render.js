@@ -112,7 +112,7 @@ function buildStatic() {
 
   // 農地
   roundRect(g, TILE + 4, 2 * TILE + 4, 9 * TILE - 8, 9 * TILE - 8, 10, '#d7b98e');
-  for (const y of PLOT_YS) for (const x of PLOT_XS) {
+  for (const { x, y } of PLOT_DEFS.filter(d => d.lv === 0)) {
     roundRect(g, x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4, 5, '#6d4c41');
     g.fillStyle = '#5d4037';
     for (let i = 1; i <= 3; i++) g.fillRect(x * TILE + 5, y * TILE + i * 8 - 1, TILE - 10, 2);
@@ -157,6 +157,12 @@ function buildStatic() {
   roundRect(g, WELL.x * TILE + 7, WELL.y * TILE + 7, TILE - 14, TILE - 14, 8, '#4fc3f7');
   emoji(g, '💧', (WELL.x + 0.5) * TILE, (WELL.y + 0.5) * TILE, 12);
 
+  // 釣魚池
+  roundRect(g, POND.x0 * TILE + 2, POND.y0 * TILE + 2, (POND.x1 - POND.x0 + 1) * TILE - 4, (POND.y1 - POND.y0 + 1) * TILE - 4, 14, '#4fc3f7');
+  roundRect(g, POND.x0 * TILE + 8, POND.y0 * TILE + 8, (POND.x1 - POND.x0 + 1) * TILE - 16, (POND.y1 - POND.y0 + 1) * TILE - 16, 10, '#29b6f6');
+  emoji(g, '🪷', (POND.x0 + 0.8) * TILE, (POND.y0 + 0.6) * TILE, 12);
+  label(g, '🎣 釣魚池', (POND.x0 + 2) * TILE, (POND.y1 + 0.55) * TILE, 9, '#fff');
+
   // 招牌和樹
   label(g, '🌾 農場', 5.5 * TILE, 1.1 * TILE, 15, '#fff');
   label(g, '🐮 牧場', 5 * TILE, 15.5 * TILE, 15, '#fff');
@@ -172,15 +178,38 @@ function buildStatic() {
 const SEASON_TINT = [null, 'rgba(255,214,0,0.07)', 'rgba(230,120,20,0.14)', 'rgba(235,245,255,0.38)'];
 
 function drawPlots(g, S, time) {
-  const sprinkler = upgValue(S, 'sprinkler') > 0;
-  for (const pl of S.plots) {
+  const sprinkler = upgValue(S, 'sprinkler') > 0 || weatherOf(S).rain;
+  // 溫室：最下面那排蓋一層玻璃
+  if (S.owned.greenhouse) {
+    roundRect(g, 1.6 * TILE, (GREENHOUSE_Y - 0.15) * TILE, 7.8 * TILE, 1.3 * TILE, 6, 'rgba(178,235,242,0.35)');
+    g.strokeStyle = 'rgba(255,255,255,0.8)';
+    g.lineWidth = 1.5;
+    g.strokeRect(1.6 * TILE, (GREENHOUSE_Y - 0.15) * TILE, 7.8 * TILE, 1.3 * TILE);
+    label(g, '🏡 溫室', 1.6 * TILE + 22, (GREENHOUSE_Y - 0.15) * TILE, 8, '#fff', 'rgba(0,96,100,0.8)');
+  }
+  if (S.owned.scarecrow) emoji(g, '🪆', (SCARECROW[0] + 0.5) * TILE, (SCARECROW[1] + 0.5) * TILE, 22);
+  S.plots.forEach((pl, i) => {
+    if (!plotOpen(S, i)) return;
     const x = pl.x * TILE, y = pl.y * TILE, cx = x + TILE / 2, cy = y + TILE / 2;
+    // 買地之後多出來的農地（原本的 16 格畫在背景上）
+    if (PLOT_DEFS[i].lv > 0) {
+      roundRect(g, x + 2, y + 2, TILE - 4, TILE - 4, 5, '#6d4c41');
+      g.fillStyle = '#5d4037';
+      for (let r = 1; r <= 3; r++) g.fillRect(x + 5, y + r * 8 - 1, TILE - 10, 2);
+    }
     if (pl.crop && (pl.wet > 0 || sprinkler)) roundRect(g, x + 2, y + 2, TILE - 4, TILE - 4, 5, 'rgba(20,50,110,0.35)');
-    if (!pl.crop) continue;
+    if (!pl.crop) return;
     if (pl.dead) {
       emoji(g, '🥀', cx, cy - 2, 18);
     } else if (pl.g >= 1) {
-      emoji(g, CROPS[pl.crop].emoji, cx, cy - 2 + Math.sin(time * 4 + pl.x) * 1.5, 20);
+      const bob = Math.sin(time * 4 + pl.x) * 1.5;
+      if (pl.giant) {
+        emoji(g, '🎃', cx, cy - 6 + bob, 34);
+        label(g, '巨無霸！兩人一起點', cx, cy - 26, 8, '#fff', 'rgba(230,81,0,0.85)');
+      } else {
+        emoji(g, CROPS[pl.crop].emoji, cx, cy - 2 + bob, 20);
+        if (pl.perfect) emoji(g, '✨', x + TILE - 6, y + 6, 10);
+      }
     } else {
       emoji(g, pl.g < 0.4 ? '🌱' : '🌿', cx, cy - 3, pl.g < 0.4 ? 14 : 18);
       g.fillStyle = 'rgba(0,0,0,0.45)';
@@ -193,8 +222,43 @@ function drawPlots(g, S, time) {
         emoji(g, '💧', x + TILE - 6, y + 6, 11);
         g.globalAlpha = 1;
       }
+      if (pl.bug) emoji(g, '🐛', x + 7 + Math.sin(time * 3) * 2, y + TILE - 9, 12);
     }
+    // 烏鴉停在上面：飛下來的動畫 + 倒數條
+    if (S.crow && S.crow.i === i) {
+      const drop = Math.max(0, 1 - S.crow.t * 6);
+      emoji(g, '🐦', cx + 6, cy - 10 - drop * 40 + Math.sin(time * 10) * 1.5, 18);
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      g.fillRect(x + 3, y - 3, TILE - 6, 4);
+      g.fillStyle = '#ef5350';
+      g.fillRect(x + 3, y - 3, (TILE - 6) * S.crow.t, 4);
+    }
+  });
+}
+
+// 天氣：雨、雪、暴風雨畫在畫面上
+function drawWeather(g, S, cw, ch, time) {
+  const w = weatherOf(S);
+  if (w.storm) { g.fillStyle = 'rgba(30,40,60,0.22)'; g.fillRect(0, 0, cw, ch); }
+  else if (S.weather === 'sunny') { g.fillStyle = 'rgba(255,236,179,0.08)'; g.fillRect(0, 0, cw, ch); }
+  if (!w.rain) return;
+  const snow = seasonOf(S.day) === 3, n = w.storm ? 90 : 55;
+  g.strokeStyle = 'rgba(200,225,255,0.55)';
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  g.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    const sx = (i * 97.3) % cw, speed = snow ? 30 : w.storm ? 520 : 380;
+    const y = ((i * 53.7) + time * speed) % (ch + 20) - 10;
+    const x = snow ? sx + Math.sin(time + i) * 10 : sx - (y * 0.15);
+    if (snow) { g.beginPath(); g.arc(x, y, 1.6, 0, Math.PI * 2); g.fill(); }
+    else { g.beginPath(); g.moveTo(x, y); g.lineTo(x - 3, y + 10); g.stroke(); }
   }
+  if (w.storm && Math.sin(time * 0.7) > 0.995) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(0, 0, cw, ch); }
+}
+
+function drawPets(g, S, time) {
+  if (S.owned.dog) emoji(g, '🐕', (S.dog.x + 0.5) * TILE, (S.dog.y + 0.5) * TILE + Math.abs(Math.sin(time * 6)) * -2, 20);
+  if (S.owned.cat) emoji(g, '🐈', (S.cat.x + 0.5) * TILE, (S.cat.y + 0.5) * TILE, 18);
 }
 
 function drawShopObjects(g, S, time) {
@@ -210,7 +274,8 @@ function drawShopObjects(g, S, time) {
       const iy = y + 8 + j * 15;
       if (n === slots - 1 && stocked.length > slots) { label(g, `+${stocked.length - slots + 1}`, x + TILE / 2, iy, 9, '#fff'); continue; }
       emoji(g, ITEMS[k].emoji, x + 9, iy, 11);
-      label(g, String(S.shelves[k]), x + 23, iy, 9, '#fff');
+      if (ITEMS[k].gold) emoji(g, '⭐', x + 14, iy - 5, 7);
+      label(g, String(S.shelves[k] === Infinity ? '∞' : S.shelves[k]), x + 23, iy, 9, '#fff');
     }
   });
   if (!stocked.length) label(g, '貨架是空的', (SHELF_TILES[2][0] + 0.5) * TILE, (SHELF_TILES[2][1] + 0.5) * TILE, 9, '#fff');
@@ -226,16 +291,16 @@ function drawShopObjects(g, S, time) {
       return;
     }
     roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 4, '#78909c');
-    const working = m.input >= prod.need && m.out < MACHINE_OUT;
+    const working = m.input > 0 && m.out < MACHINE_OUT;
     emoji(g, def.icon, x + TILE / 2, y + 11 + (working ? Math.sin(time * 20) * 0.8 : 0), 15);
     g.fillStyle = 'rgba(0,0,0,0.45)';
     g.fillRect(x + 4, y + TILE - 6, TILE - 8, 3);
     g.fillStyle = '#ffca28';
     g.fillRect(x + 4, y + TILE - 6, (TILE - 8) * m.p, 3);
-    // 機器裡的原料數→成品數；靠上牆的寫在下面，靠右牆的寫在左邊
+    // 排了幾份→做好幾個；靠右牆的寫在左邊，其他寫在下面
     const info = `${m.input}→${m.out}${m.out ? prod.emoji : ''}`;
-    const below = def.y === SHOP.y0 + 1;
-    label(g, info, below ? x + TILE / 2 : x - 12, below ? y + TILE + 6 : y + TILE / 2, 9, m.out ? '#ffe082' : '#fff', 'rgba(0,0,0,0.55)');
+    const left = def.x === SHOP.x1 - 1;
+    label(g, info, left ? x - 12 : x + TILE / 2, left ? y + TILE / 2 : y + TILE + 6, 9, m.out ? '#ffe082' : '#fff', 'rgba(0,0,0,0.55)');
   });
 
   // 買了的裝潢
@@ -302,8 +367,9 @@ function drawAnimals(g, S, time) {
   }
 }
 
-// 雇來的幫手：咖啡色的圓，戴草帽
-function drawWorker(g, w, x, y, time) {
+// 雇來的幫手：各自顏色的圓，戴自己的帽子
+function drawHelper(g, w, x, y) {
+  const def = HELPERS[w.kind] || HELPERS.farmer;
   const cx = (x + 0.5) * TILE, cy = (y + 0.5) * TILE;
   g.globalAlpha = w.off ? 0.45 : 1;
   g.fillStyle = 'rgba(0,0,0,0.25)';
@@ -311,9 +377,9 @@ function drawWorker(g, w, x, y, time) {
   g.beginPath(); g.arc(cx, cy, 11, 0, Math.PI * 2);
   g.fillStyle = w.color; g.fill();
   g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
-  emoji(g, '👒', cx, cy - 4, 14);
-  label(g, w.off ? '幫手（放假）' : '幫手', cx, cy - 19, 10, '#fff', 'rgba(93,64,55,0.8)');
-  const carry = ITEM_KEYS.filter(k => w.carry[k]).map(k => ITEMS[k].emoji + w.carry[k]).join('');
+  emoji(g, def.hat, cx, cy - 4, 14);
+  label(g, def.short + (w.off ? '（放假）' : ''), cx, cy - 19, 10, '#fff', 'rgba(93,64,55,0.8)');
+  const carry = itemList(w.carry, '');
   if (carry) label(g, carry, cx, cy + 19, 10, '#fff', 'rgba(0,0,0,0.55)');
   g.globalAlpha = 1;
 }
@@ -371,9 +437,17 @@ function drawPlayer(g, p, x, y, isMe) {
   g.strokeStyle = isMe ? '#ffca28' : '#fff';
   g.stroke();
   label(g, [...p.name][0] || '?', cx, cy + 1, 12, '#fff', p.color);
-  label(g, p.name + (isMe ? '（你）' : p.connected ? '' : '（離線）'), cx, cy - 19, 10, '#fff', 'rgba(0,0,0,0.55)');
-  const carry = ITEM_KEYS.filter(k => p.carry[k]).map(k => ITEMS[k].emoji + p.carry[k]).join('');
+  const hat = HATS[p.hat] && HATS[p.hat].icon;
+  if (hat) emoji(g, hat, cx, cy - 12, 15);
+  label(g, p.name + (isMe ? '（你）' : p.connected ? '' : '（離線）'), cx, cy - (hat ? 25 : 19), 10, '#fff', 'rgba(0,0,0,0.55)');
+  const carry = itemList(p.carry, '');
   if (carry) label(g, carry, cx, cy + 19, 10, '#fff', 'rgba(0,0,0,0.55)');
+  // 釣魚中：旁邊一根釣竿和上下晃的浮標
+  if (p.fishing) {
+    emoji(g, '🎣', cx + 14, cy - 6, 14);
+    g.fillStyle = '#ef5350';
+    g.beginPath(); g.arc(cx + 24, cy + 6 + Math.sin(performance.now() / 200) * 2, 2.5, 0, Math.PI * 2); g.fill();
+  }
   g.globalAlpha = 1;
 }
 
@@ -411,12 +485,9 @@ function drawGame(g, S, view, meId, disp, tapMark, time) {
   const ents = [
     ...S.customers.map(c => ({ e: c, d: disp['c' + c.id] || c, draw: drawCustomer })),
     ...Object.values(S.players).map(p => ({ e: p, d: disp['p' + p.id] || p, draw: (g, e, x, y) => drawPlayer(g, e, x, y, e.id === meId) })),
+    ...HELPER_KEYS.filter(k => S.helpers[k]).map(k => ({ e: S.helpers[k], d: disp['h' + k] || S.helpers[k], draw: drawHelper })),
   ].sort((a, b) => a.d.y - b.d.y);
-  if (S.worker) {
-    const d = disp.worker || S.worker;
-    ents.push({ e: S.worker, d, draw: (g, e, x, y) => drawWorker(g, e, x, y, time) });
-    ents.sort((a, b) => a.d.y - b.d.y);
-  }
+  drawPets(g, S, time);
   for (const { e, d, draw } of ents) draw(g, e, d.x, d.y);
   if (S.thief) { const d = disp.thief || S.thief; drawThief(g, { ...S.thief, x: d.x, y: d.y }, time); }
 
@@ -436,6 +507,7 @@ function drawGame(g, S, view, meId, disp, tapMark, time) {
     g.fillStyle = `rgba(25,35,90,${dark})`;
     g.fillRect(0, 0, cw, ch);
   }
+  drawWeather(g, S, cw, ch, time);
 
   // 達成目標的橫幅
   if (S.banner) {

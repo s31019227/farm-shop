@@ -147,10 +147,21 @@
     b.onclick = () => { sendInput({ t: 'chat', i }); setPopup(null); };
     chatMenu.appendChild(b);
   });
-  $('btn-worker').onclick = () => {
-    if (S.worker && !confirm('確定要解雇幫手嗎？他身上的東西會放回貨架')) return;
-    sendInput({ t: 'worker', v: !S.worker });
-  };
+  // 三種幫手各一個按鈕
+  for (const k of HELPER_KEYS) {
+    const def = HELPERS[k], row = document.createElement('div');
+    row.className = 'helper-row';
+    row.innerHTML = '<div class="helper-info"><b></b><span class="sheet-note"></span></div><button></button>';
+    row.querySelector('b').textContent = `${def.hat} ${def.name}`;
+    row.querySelector('.sheet-note').textContent = `${def.desc}。雇用 $${def.hire}，每天工資 $${def.wage}`;
+    const b = row.querySelector('button');
+    b.dataset.helper = k;
+    b.onclick = () => {
+      if (S.helpers[k] && !confirm(`確定要解雇${def.name}嗎？他身上的東西會放回貨架`)) return;
+      sendInput({ t: 'helper', k, v: !S.helpers[k] });
+    };
+    $('helpers').appendChild(row);
+  }
   PRICE_LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
     b.textContent = lv.name;
@@ -159,14 +170,32 @@
     $('price').appendChild(b);
   });
 
-  let goalSig = '';
+  let goalSig = '', lastHatSig = '';
   function updatePanel() {
     for (const b of $('price').children) b.classList.toggle('active', +b.dataset.price === S.priceLv);
     const lv = priceLevel(S);
     setText('price-desc', `售價 ×${lv.mult}　` + (lv.mult < 1 ? '客人變多、評價漲得快' : lv.mult > 1 ? '客人變少、比較沒耐心、評價漲得慢' : '標準價格'));
-    const wb = $('btn-worker');
-    setText(wb, S.worker ? '解雇幫手' + (S.worker.off ? '（今天放假）' : '') : `👨‍🌾 雇用幫手 $${WORKER.hireCost}`);
-    wb.disabled = !S.worker && S.money < WORKER.hireCost;
+    for (const b of $$('[data-helper]')) {
+      const k = b.dataset.helper, h = S.helpers[k];
+      setText(b, h ? '解雇' + (h.off ? '（今天放假）' : '') : `雇用 $${HELPERS[k].hire}`);
+      b.disabled = !h && S.money < HELPERS[k].hire;
+    }
+    // 帽子：買過的才能戴（買帽子在結算畫面）
+    const me = S.players[meId];
+    const hatSig = JSON.stringify(S.hats) + (me && me.hat);
+    if (me && hatSig !== lastHatSig) {
+      lastHatSig = hatSig;
+      const box = $('hats');
+      box.innerHTML = '';
+      for (const k of HAT_KEYS) {
+        if (!S.hats[k]) continue;
+        const b = document.createElement('button');
+        b.textContent = HATS[k].icon ? `${HATS[k].icon} ${HATS[k].name}` : HATS[k].name;
+        b.classList.toggle('active', me.hat === k);
+        b.onclick = () => sendInput({ t: 'hat', k });
+        box.appendChild(b);
+      }
+    }
     const sig = JSON.stringify(S.goals) + S.day;
     if (sig === goalSig) return;
     goalSig = sig;
@@ -247,6 +276,73 @@
     lastFxId = Math.max(max, S.fxSeq || 0, 0);
   }
 
+  // ---------- 背景音樂：五聲音階隨機旋律 + 低音，白天、晚上、節慶的速度和音高不一樣 ----------
+  const MUSIC_KEY = 'nongshop-music';
+  let musicOn = store(() => localStorage.getItem(MUSIC_KEY)) !== '0';
+  let musicNext = 0, musicStep = 0, musicGain = null, melodyIdx = 4;
+  const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
+  const CHORDS = [0, 5, 9, 7];          // 每小節低音的半音位置
+  const musicBtn = $('btn-music');
+  musicBtn.classList.toggle('off', !musicOn);
+  musicBtn.onclick = () => {
+    musicOn = !musicOn;
+    musicBtn.classList.toggle('off', !musicOn);
+    store(() => localStorage.setItem(MUSIC_KEY, musicOn ? '1' : '0'));
+  };
+
+  function playNote(freq, start, dur, type, vol) {
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(vol, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain).connect(musicGain);
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+  }
+
+  function scheduleMusic() {
+    if (!musicOn || !audio || audio.state !== 'running' || !S) return;
+    if (!musicGain) { musicGain = audio.createGain(); musicGain.gain.value = 0.06; musicGain.connect(audio.destination); }
+    const h = gameHour(S.t), night = h >= 19 || h < 7, fest = isFestival(S.day);
+    const beat = fest ? 0.2 : night ? 0.42 : 0.28, root = night ? 220 : 262;
+    const semi = n => root * Math.pow(2, n / 12);
+    if (musicNext < audio.currentTime) musicNext = audio.currentTime + 0.05;
+    while (musicNext < audio.currentTime + 0.4) {
+      const bar = Math.floor(musicStep / 8) % CHORDS.length;
+      if (musicStep % 8 === 0) playNote(semi(CHORDS[bar] - 24), musicNext, beat * 7, 'sine', 0.5);
+      // 旋律在音階上小步走，偶爾休息
+      if (Math.random() < (night ? 0.45 : 0.7)) {
+        melodyIdx = Math.max(0, Math.min(PENTA.length - 1, melodyIdx + randInt(-2, 2)));
+        playNote(semi(PENTA[melodyIdx]), musicNext, beat * 0.9, 'triangle', 0.35);
+      }
+      musicNext += beat;
+      musicStep++;
+    }
+  }
+
+  // ---------- 新手教學：前三天、每台裝置只顯示一次 ----------
+  const TUT_KEY = 'nongshop-tutorial';
+  let tutDone = store(() => localStorage.getItem(TUT_KEY)) === '1';
+  const TUTORIAL = [
+    { text: '👋 先在左邊的農地點一下，種下番茄', done: S => S.plots.some(p => p.crop) },
+    { text: '💧 作物要有水才會長：到 💧 井打水，再點正在長的作物（種的時候有水會順便澆）', done: S => S.plots.some(p => p.crop && (p.wet > 0 || p.g > 0.3)) },
+    { text: '🍅 等作物成熟（會上下晃）再點一下收成', done: S => Object.values(S.players).some(p => CROP_KEYS.some(k => p.carry[k] || p.carry[goldOf(k)])) || ITEM_KEYS.some(k => S.shelves[k] > 0) },
+    { text: '🏪 從店的側門走進後場，點貨架把東西放上去', done: S => ITEM_KEYS.some(k => S.shelves[k] > 0) },
+    { text: '💰 客人走到櫃台時，點 💰 幫他結帳。之後可以打開右下角 📋 管理看升級和目標！', done: S => S.served > 0 },
+  ];
+  $('tut-skip').onclick = () => { tutDone = true; store(() => localStorage.setItem(TUT_KEY, '1')); };
+
+  function updateTutorial() {
+    const el = $('tutorial');
+    if (tutDone || S.phase !== 'play' || S.day > 3) { el.classList.add('hidden'); return; }
+    const i = TUTORIAL.findIndex(s => !s.done(S));
+    if (i < 0) { tutDone = true; store(() => localStorage.setItem(TUT_KEY, '1')); el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    setText('tut-text', `📖 ${i + 1}/${TUTORIAL.length}　${TUTORIAL[i].text}`);
+  }
+
   let readySig = '';
   function updateReady() {
     const me = S.players[meId];
@@ -300,7 +396,7 @@
     const me = S.players[meId];
     if (!me) return;
     const online = onlinePlayers(S), st = S.stats;
-    const sig = JSON.stringify([online.map(p => [p.id, p.name, p.color, p.ready]), S.day, S.money, st, S.unlocked, S.decor, S.animals]);
+    const sig = JSON.stringify([online.map(p => [p.id, p.name, p.color, p.ready]), S.day, S.money, st, S.unlocked, S.decor, S.animals, S.owned, S.hats, S.weatherNext]);
     if (sig === summarySig) return;
     summarySig = sig;
 
@@ -315,8 +411,14 @@
       ['賣出', sold],
       ['特殊訂單', st.order === 'done' ? `完成 +$${st.orderReward}` : st.order === 'failed' ? '沒完成' : '—', st.order === 'failed' ? 'neg' : ''],
       ['枯萎的作物', `${st.withered} 株`, st.withered ? 'neg' : ''],
-      ['小偷', st.thief === 'caught' ? '抓到了！+$30' : st.thief === 'stolen' ? `被偷走 $${st.stolen}` : '沒來', st.thief === 'stolen' ? 'neg' : ''],
-      ...(S.worker ? [['幫手工資', S.worker.off ? '今天放假（錢不夠）' : `-$${st.wage}`, 'neg']] : []),
+      ['小偷', st.thief === 'caught' ? '抓到了！+$30' : st.thief === 'dog' ? '被看門狗嚇跑了 🐕' : st.thief === 'stolen' ? `被偷走 $${st.stolen}` : '沒來', st.thief === 'stolen' ? 'neg' : ''],
+      ...(st.stormLoss ? [['暴風雨打壞', `${st.stormLoss} 株`, 'neg']] : []),
+      ...(st.crowLoss ? [['被烏鴉吃掉', `${st.crowLoss} 株`, 'neg']] : []),
+      ...(st.gold ? [['🌟 金星作物', `${st.gold} 個`]] : []),
+      ...(st.giants ? [['🎃 巨無霸南瓜', `${st.giants} 顆`]] : []),
+      ...(st.fish ? [['🐟 釣到的魚', `${st.fish} 條`]] : []),
+      ...(st.maxCombo >= 2 ? [['最高結帳連擊', `×${st.maxCombo}`]] : []),
+      ...(st.wage ? [['幫手工資', `-$${st.wage}`, 'neg']] : []),
       ['種子、飼料花費', `-$${st.seedSpent}`, 'neg'],
       ['升級、解鎖花費', `-$${st.upgradeSpent}`, 'neg'],
       ['今日淨賺', `${net < 0 ? '-' : ''}$${Math.abs(net)}`],
@@ -337,6 +439,8 @@
 
     // 明天換季、最終目標的狀況提醒一下
     const next = seasonOf(S.day + 1), notes = [];
+    notes.push(`明天的天氣：${weatherLabel({ day: S.day + 1 }, S.weatherNext)}${WEATHERS[S.weatherNext] && WEATHERS[S.weatherNext].storm ? '（下午會打壞田裡的作物，溫室裡的沒事）' : ''}`);
+    if (isFestival(S.day + 1)) notes.push(`${SEASONS[next].festIcon} 明天是${SEASONS[next].festival}！客人會特別多，先多備點貨`);
     if (S.goals.final) notes.push(`🏆 你們在第 ${S.goals.final} 天達成最終目標了！可以繼續經營`);
     else if (S.day >= FINAL_DAY) notes.push(`沒在 ${FINAL_DAY} 天內存到 $5,000，不過可以繼續經營`);
     else notes.push(`🏆 最終目標：再 ${FINAL_DAY - S.day} 天內存到 $5,000（還差 $${Math.max(0, 5000 - S.money)}）`);
@@ -350,14 +454,35 @@
     for (const k of UNLOCK_KEYS) {
       if (S.unlocked[k]) continue;
       const u = UNLOCKS[k], it = ITEMS[k], b = document.createElement('button');
-      const what = CROPS[k] ? `${it.emoji} ${it.name}（作物）` : `${it.emoji} ${it.name}（${MACHINES[machineIndex(k)].name}）`;
-      const blocked = u.requires && !owns(S, u.requires);
-      b.textContent = blocked ? `${what} — 要先${ANIMALS[u.requires] ? '養' : '解鎖'}${nameOf(u.requires)}` : `${what} → 解鎖 $${u.cost}`;
-      b.disabled = blocked || S.money < u.cost;
+      const what = CROPS[k] ? `${it.emoji} ${it.name}（作物）` : `${it.emoji} ${it.name}（${MACHINES[machineIndex(k)].name}：${recipeText(k)}）`;
+      const missing = unlockBlockers(S, k);
+      b.textContent = missing.length ? `${what} — 要先有${missing.map(nameOf).join('、')}` : `${what} → 解鎖 $${u.cost}`;
+      b.disabled = missing.length > 0 || S.money < u.cost;
       b.onclick = () => sendInput({ t: 'unlock', k });
       unlocks.appendChild(b);
     }
     if (!unlocks.children.length) unlocks.textContent = '全部都解鎖了！';
+
+    const fac = $('sum-facilities');
+    fac.innerHTML = '';
+    for (const k of FACILITY_KEYS) {
+      const f = FACILITIES[k], b = document.createElement('button');
+      b.textContent = S.owned[k] ? `${f.icon} ${f.name}（已經有了）` : `${f.icon} ${f.name}：${f.desc} → $${f.cost}`;
+      b.disabled = !!S.owned[k] || S.money < f.cost;
+      b.onclick = () => sendInput({ t: 'facility', k });
+      fac.appendChild(b);
+    }
+    const hats = $('sum-hats');
+    hats.innerHTML = '';
+    for (const k of HAT_KEYS) {
+      const h = HATS[k];
+      if (!h.cost) continue;
+      const b = document.createElement('button');
+      b.textContent = S.hats[k] ? `${h.icon} ${h.name}（已買，在管理面板戴上）` : `${h.icon} ${h.name} → $${h.cost}`;
+      b.disabled = !!S.hats[k] || S.money < h.cost;
+      b.onclick = () => sendInput({ t: 'buyhat', k });
+      hats.appendChild(b);
+    }
 
     const animals = $('sum-animals');
     animals.innerHTML = '';
@@ -392,7 +517,7 @@
   function updateSeeds() {
     const season = seasonOf(S.day);
     const keys = CROP_KEYS.filter(k => S.unlocked[k]);
-    const sig = keys.join() + '|' + season;
+    const sig = keys.join() + '|' + season + '|' + !!S.owned.greenhouse;
     if (sig === seedSig) return;
     seedSig = sig;
     const seeds = $('seeds');
@@ -402,7 +527,11 @@
       b.dataset.crop = k;
       b.innerHTML = `${c.emoji} <span class="seed-name">${c.name}種子</span> $${c.seed}`;
       b.title = `${c.name}種子（${c.seasons.map(i => SEASONS[i].name).join('、')}天可以種）`;
-      b.disabled = !c.seasons.includes(season);
+      // 有溫室的話不合季節的種子也能選（只能種在溫室那排）
+      const off = !c.seasons.includes(season);
+      b.disabled = off && !S.owned.greenhouse;
+      b.classList.toggle('greenhouse-only', off && !!S.owned.greenhouse);
+      if (off && S.owned.greenhouse) b.title += '（現在只能種在溫室）';
       b.onclick = () => sendInput({ t: 'seed', c: k });
       seeds.appendChild(b);
     }
@@ -561,7 +690,9 @@
       stats: S.stats, upg: S.upg, plots: S.plots, shelves: S.shelves, machines: S.machines,
       unlocked: S.unlocked, order: S.order,
       rating: S.rating, priceLv: S.priceLv, decor: S.decor, goals: S.goals, ordersDone: S.ordersDone, fxSeq: S.fxSeq,
-      animals: S.animals, thievesCaught: S.thievesCaught, worker: S.worker ? { off: S.worker.off, carry: S.worker.carry } : null,
+      animals: S.animals, thievesCaught: S.thievesCaught, owned: S.owned, hats: S.hats,
+      giants: S.giants, fishCaught: S.fishCaught, starsServed: S.starsServed, weather: S.weather, weatherNext: S.weatherNext, mv: 2,
+      helpers: Object.fromEntries(HELPER_KEYS.map(k => [k, S.helpers[k] ? { off: S.helpers[k].off, carry: S.helpers[k].carry } : null])),
     };
     store(() => localStorage.setItem(SAVE_KEY, JSON.stringify(data)));
   }
@@ -573,11 +704,17 @@
     // 跟預設值合併，舊存檔沒有的新東西（加工品、加工機、新升級）會補上
     Object.assign(s, {
       day: d.day, t: d.t, money: d.money, served: d.served || 0,
-      plots: s.plots.map((pl, i) => ({ ...pl, ...(d.plots && d.plots[i]) })),
+      plots: s.plots.map((pl, i) => ({ ...pl, ...(d.plots && d.plots[i]), lift: {} })),
       upg: { ...s.upg, ...d.upg },
       unlocked: { ...s.unlocked, ...d.unlocked },
       shelves: { ...s.shelves, ...d.shelves },
-      machines: s.machines.map((m, i) => (d.machines && d.machines[i]) || m),
+      // 舊存檔的加工機記的是原料個數，換算成排了幾份
+      machines: s.machines.map((m, i) => {
+        const o = d.machines && d.machines[i];
+        if (!o) return m;
+        const need = Object.values(PRODUCTS[MACHINES[i].product].inputs)[0];
+        return { ...o, input: d.mv === 2 ? o.input : Math.min(MACHINE_QUEUE, Math.floor(o.input / need)) };
+      }),
       order: d.order || null,
       rating: d.rating ?? s.rating,
       priceLv: d.priceLv ?? s.priceLv,
@@ -587,11 +724,20 @@
       fxSeq: d.fxSeq || 0,
       animals: Object.fromEntries(ANIMAL_KEYS.map(k => [k, { ...s.animals[k], ...(d.animals && d.animals[k]) }])),
       thievesCaught: d.thievesCaught || 0,
-      worker: d.worker ? Object.assign(newWorker(), { off: d.worker.off, carry: { ...zeroItems(), ...d.worker.carry } }) : null,
+      owned: d.owned || {},
+      hats: { ...s.hats, ...d.hats },
+      giants: d.giants || 0, fishCaught: d.fishCaught || 0, starsServed: d.starsServed || 0,
+      weather: d.weather || 'cloudy', weatherNext: d.weatherNext || 'sunny',
     });
+    // 幫手（舊存檔只有一個 worker，就是農場幫手）
+    const savedHelpers = d.helpers || { farmer: d.worker || null };
+    for (const k of HELPER_KEYS) {
+      const h = savedHelpers[k];
+      s.helpers[k] = h ? Object.assign(newHelper(k), { off: h.off, carry: { ...zeroItems(), ...h.carry } }) : null;
+    }
     if (d.stats) s.stats = { ...newStats(), ...d.stats, sold: { ...s.stats.sold, ...d.stats.sold } };
     // 存檔時已經在結算畫面的話，下次直接從隔天開始
-    if (s.t >= DAY_LEN) { s.day++; s.t = 0; s.stats = newStats(); s.order = null; }
+    if (s.t >= DAY_LEN) { s.day++; s.t = 0; s.stats = newStats(); s.order = null; s.weather = s.weatherNext; }
     return s;
   }
 
@@ -676,7 +822,7 @@
     for (const p of Object.values(s.players)) pos['p' + p.id] = [p.x, p.y];
     for (const c of s.customers) pos['c' + c.id] = [c.x, c.y];
     if (s.thief) pos.thief = [s.thief.x, s.thief.y];
-    if (s.worker) pos.worker = [s.worker.x, s.worker.y];
+    for (const k of HELPER_KEYS) if (s.helpers[k]) pos['h' + k] = [s.helpers[k].x, s.helpers[k].y];
     snaps.push({ at: performance.now(), pos });
     while (snaps.length > 20) snaps.shift();
     reconcile();
@@ -716,7 +862,8 @@
     const h = gameHour(S.t), hh = Math.floor(h), mm = Math.floor((h - hh) * 6) * 10;
     const status = h < OPEN_HOUR ? '（準備中）' : h >= CLOSE_HOUR ? '（打烊）' : '';
     const season = SEASONS[seasonOf(S.day)];
-    setText('hud-day', `${season.icon}${season.name}・第 ${S.day} 天 ${pad(hh)}:${pad(mm)}${status}`);
+    const fest = isFestival(S.day) ? `${season.festIcon}${season.festival} ` : '';
+    setText('hud-day', `${season.icon}${season.name}・第 ${S.day} 天 ${pad(hh)}:${pad(mm)}${status}　${fest}${weatherLabel(S, S.weather)}`);
     // 錢的數字會滾動到新的值，增加變綠、減少變紅
     if (shownMoney === null) shownMoney = S.money;
     const moneyEl = $('hud-money');
@@ -759,7 +906,9 @@
       updateHud(dt);
       updateBar();
       updatePanel();
+      updateTutorial();
       playNewSounds();
+      scheduleMusic();
       if (tapMark && (tapMark.ttl -= dt * 1.5) <= 0) tapMark = null;
     }
     requestAnimationFrame(frame);

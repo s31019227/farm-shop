@@ -8,14 +8,24 @@ const MAX_PLAYERS = 4;
 const WET_TIME = 30;              // 澆一次水能撐幾秒
 const WITHER_TIME = 60;           // 沒水超過幾秒就枯萎
 
-// 季節：每 SEASON_LEN 天換一季
+// 季節：每 SEASON_LEN 天換一季；每季第 FESTIVAL_DAY 天是節慶
 const SEASONS = [
-  { name: '春', icon: '🌸' },
-  { name: '夏', icon: '☀️' },
-  { name: '秋', icon: '🍁' },
-  { name: '冬', icon: '❄️' },
+  { name: '春', icon: '🌸', festival: '花祭', festIcon: '🌸' },
+  { name: '夏', icon: '☀️', festival: '夏日祭', festIcon: '🎆' },
+  { name: '秋', icon: '🍁', festival: '豐收祭', festIcon: '🌾' },
+  { name: '冬', icon: '❄️', festival: '冬至市集', festIcon: '🎄' },
 ];
-const SEASON_LEN = 7;
+const SEASON_LEN = 7, FESTIVAL_DAY = 4;
+
+// 天氣：每天早上換一次，前一天的結算畫面會預告
+const WEATHERS = {
+  cloudy: { name: '多雲', icon: '⛅', weight: 40, spawn: 1 },
+  sunny: { name: '大晴天', icon: '☀️', weight: 30, spawn: 0.85, dry: 1.6 },
+  rain: { name: '下雨', icon: '🌧️', snowName: '下雪', snowIcon: '🌨️', weight: 20, spawn: 1.25, rain: true },
+  storm: { name: '暴風雨', icon: '⛈️', weight: 10, spawn: 1.5, rain: true, storm: true },
+};
+const WEATHER_KEYS = Object.keys(WEATHERS);
+const STORM_HOUR = 15;
 
 // seasons：哪幾季可以種（0 春 1 夏 2 秋 3 冬）
 const CROPS = {
@@ -27,6 +37,12 @@ const CROPS = {
   pumpkin: { name: '南瓜', emoji: '🎃', seed: 15, price: 60, grow: 50, yield: 1, seasons: [1, 2] },
 };
 const CROP_KEYS = Object.keys(CROPS);
+
+// 金星作物：一直有水才有機會長出來，賣兩倍價，不能拿去加工
+const GOLD = Object.fromEntries(CROP_KEYS.map(k => ['g_' + k, {
+  name: '金星' + CROPS[k].name, emoji: CROPS[k].emoji, price: CROPS[k].price * 2, gold: true, base: k,
+}]));
+const goldOf = crop => 'g_' + crop;
 
 // 動物：餵飽之後每 interval 秒（一隻的情況）產出一個 good；每種能養幾隻看「牧場擴建」升級
 const ANIMALS = {
@@ -40,42 +56,46 @@ const FEED_COST = 3, FED_TIME = 90;
 const animalMax = S => upgValue(S, 'barn');
 const readyCap = a => 2 + 2 * a.count;     // 產出最多先放幾個在欄裡等人收
 
-// 雇來的農場幫手
-const WORKER = { hireCost: 300, wage: 25, speed: 3.5, spawn: [11, 9] };
-
-// 動物產出的東西。生肉不能直接賣，要煮熟
+// 動物和池塘產出的東西。生肉、生魚不能直接賣，要煮熟
 const GOODS = {
   egg: { name: '雞蛋', emoji: '🥚', price: 14, animal: 'chicken' },
   milk: { name: '牛奶', emoji: '🥛', price: 22, animal: 'cow' },
   pork: { name: '生豬肉', emoji: '🥩', price: 0, animal: 'pig', noDemand: true },
   wool: { name: '羊毛', emoji: '🧶', price: 48, animal: 'sheep' },
+  fish: { name: '鮮魚', emoji: '🐟', price: 0, noDemand: true },
 };
 
-// 店裡加工出來的商品：need 個 from → 1 個成品，要花 time 秒。noDemand = 客人不會直接買（中間材料）
+// 店裡加工出來的商品：inputs 是一份要用的原料，time 秒做好一個。noDemand = 客人不會直接買（中間材料）
 const PRODUCTS = {
-  ketchup: { name: '番茄醬', emoji: '🥫', price: 35, from: 'tomato', need: 2, time: 12 },
-  juice: { name: '紅蘿蔔汁', emoji: '🧃', price: 50, from: 'carrot', need: 2, time: 15 },
-  jam: { name: '草莓果醬', emoji: '🍯', price: 70, from: 'strawberry', need: 2, time: 18 },
-  soup: { name: '玉米濃湯', emoji: '🥣', price: 80, from: 'corn', need: 2, time: 20 },
-  flour: { name: '麵粉', emoji: '🧂', price: 30, from: 'wheat', need: 3, time: 10, noDemand: true },
-  bread: { name: '麵包', emoji: '🍞', price: 75, from: 'flour', need: 1, time: 20 },
-  cheese: { name: '起司', emoji: '🧀', price: 70, from: 'milk', need: 2, time: 22 },
-  roast: { name: '烤豬排', emoji: '🍖', price: 75, from: 'pork', need: 1, time: 16 },
+  ketchup: { name: '番茄醬', emoji: '🥫', price: 35, inputs: { tomato: 2 }, time: 12 },
+  juice: { name: '紅蘿蔔汁', emoji: '🧃', price: 50, inputs: { carrot: 2 }, time: 15 },
+  jam: { name: '草莓果醬', emoji: '🍯', price: 70, inputs: { strawberry: 2 }, time: 18 },
+  soup: { name: '玉米濃湯', emoji: '🥣', price: 80, inputs: { corn: 2 }, time: 20 },
+  flour: { name: '麵粉', emoji: '🧂', price: 30, inputs: { wheat: 3 }, time: 10, noDemand: true },
+  bread: { name: '麵包', emoji: '🍞', price: 75, inputs: { flour: 1 }, time: 20 },
+  cheese: { name: '起司', emoji: '🧀', price: 70, inputs: { milk: 2 }, time: 22 },
+  roast: { name: '烤豬排', emoji: '🍖', price: 75, inputs: { pork: 1 }, time: 16 },
+  fishfry: { name: '炸魚', emoji: '🍤', price: 55, inputs: { fish: 1 }, time: 12 },
+  // 好幾種原料的高價料理
+  burger: { name: '漢堡', emoji: '🍔', price: 190, inputs: { bread: 1, roast: 1, tomato: 1 }, time: 20 },
+  cake: { name: '蛋糕', emoji: '🎂', price: 230, inputs: { egg: 2, milk: 1, flour: 1, strawberry: 1 }, time: 25 },
+  pizza: { name: '披薩', emoji: '🍕', price: 210, inputs: { flour: 1, cheese: 1, ketchup: 1 }, time: 22 },
 };
 const PRODUCT_KEYS = Object.keys(PRODUCTS);
-const ITEMS = { ...CROPS, ...GOODS, ...PRODUCTS };      // 所有能拿、能上架、能賣的東西
+const ITEMS = { ...CROPS, ...GOLD, ...GOODS, ...PRODUCTS };      // 所有能拿、能上架、能賣的東西
 const ITEM_KEYS = Object.keys(ITEMS);
 const zeroItems = () => Object.fromEntries(ITEM_KEYS.map(k => [k, 0]));
+const recipeText = k => Object.entries(PRODUCTS[k].inputs).map(([i, n]) => ITEMS[i].emoji + (n > 1 ? '×' + n : '')).join('+');
 
 // 每一季客人特別愛買的東西（需求變 3 倍），都是那一季種得出來的
 const SEASON_HOT = [
-  ['strawberry', 'jam', 'juice'],
-  ['ketchup', 'corn', 'pumpkin'],
-  ['pumpkin', 'soup', 'bread'],
-  ['juice', 'bread', 'carrot'],
+  ['strawberry', 'jam', 'juice', 'cake'],
+  ['ketchup', 'corn', 'pumpkin', 'pizza'],
+  ['pumpkin', 'soup', 'bread', 'burger'],
+  ['juice', 'bread', 'carrot', 'fishfry'],
 ];
 
-// 加工機：每台做一種商品，放得下 MACHINE_IN 個原料、MACHINE_OUT 個成品。全部放在店的後場
+// 加工機：每台做一種商品，最多排 MACHINE_QUEUE 份、放 MACHINE_OUT 個成品。全部放在店的後場
 const MACHINES = [
   { product: 'ketchup', name: '醬料鍋', icon: '🍲', x: 23, y: 3 },
   { product: 'juice', name: '果汁機', icon: '🥤', x: 24, y: 3 },
@@ -85,31 +105,41 @@ const MACHINES = [
   { product: 'bread', name: '烤箱', icon: '🔥', x: 28, y: 3 },
   { product: 'cheese', name: '起司桶', icon: '⚗️', x: 29, y: 4 },
   { product: 'roast', name: '烤肉架', icon: '🍳', x: 29, y: 5 },
+  { product: 'fishfry', name: '炸鍋', icon: '🫕', x: 29, y: 6 },
+  // 中間的廚房中島：做多種原料的料理
+  { product: 'burger', name: '漢堡台', icon: '🍔', x: 18, y: 5 },
+  { product: 'cake', name: '蛋糕台', icon: '🎂', x: 19, y: 5 },
+  { product: 'pizza', name: '披薩窯', icon: '🍕', x: 20, y: 5 },
 ];
-const MACHINE_IN = 6, MACHINE_OUT = 4;
+const MACHINE_QUEUE = 3, MACHINE_OUT = 4;
 
-// 一開始就有的作物和機器；其他要花錢解鎖（requires = 要先解鎖或先買的東西，可以是動物）
+// 一開始就有的作物和機器；其他要花錢解鎖（requires = 要先解鎖或先養的東西，可以是動物）
 const START_UNLOCKED = ['tomato', 'carrot', 'ketchup', 'juice'];
 const UNLOCKS = {
   strawberry: { cost: 120 },
   corn: { cost: 150 },
   wheat: { cost: 100 },
   pumpkin: { cost: 250 },
-  jam: { cost: 150, requires: 'strawberry' },
-  soup: { cost: 180, requires: 'corn' },
-  flour: { cost: 120, requires: 'wheat' },
-  bread: { cost: 200, requires: 'flour' },
-  cheese: { cost: 180, requires: 'cow' },
-  roast: { cost: 160, requires: 'pig' },
+  jam: { cost: 150, requires: ['strawberry'] },
+  soup: { cost: 180, requires: ['corn'] },
+  flour: { cost: 120, requires: ['wheat'] },
+  bread: { cost: 200, requires: ['flour'] },
+  cheese: { cost: 180, requires: ['cow'] },
+  roast: { cost: 160, requires: ['pig'] },
+  fishfry: { cost: 120 },
+  burger: { cost: 300, requires: ['bread', 'roast'] },
+  cake: { cost: 350, requires: ['flour', 'strawberry', 'chicken', 'cow'] },
+  pizza: { cost: 320, requires: ['flour', 'cheese'] },
 };
 const UNLOCK_KEYS = Object.keys(UNLOCKS);
 
 // 全隊共用的升級：costs[i] 是從 Lv(i+1) 升到 Lv(i+2) 的價錢，values[i] 是 Lv(i+1) 的數值
+// show = 按鈕上要顯示目前的數值；Infinity 會顯示成「無限」
 const UPGRADES = {
   speed: { name: '走路速度', icon: '🏃', costs: [50, 100, 180, 300], values: [4, 5, 6, 7, 8] },
-  // show = 按鈕上要顯示目前的數值；Infinity 會顯示成「無限」
   shelf: { name: '貨架容量', icon: '🗄️', show: true, costs: [40, 90, 160, 260, 400, 600, 900, 1300, 2000], values: [10, 20, 30, 45, 60, 80, 100, 150, 250, Infinity] },
   bag: { name: '背包容量', icon: '🎒', show: true, costs: [60, 120, 200, 320, 480], values: [10, 14, 18, 24, 30, 40] },
+  land: { name: '農地', icon: '🚜', costs: [400, 900], values: [0, 1, 2], labels: ['16 格', '24 格', '36 格'] },
   feed: { name: '飼養技術', icon: '🌾', show: true, unit: '倍產量', costs: [100, 200, 350, 550], values: [1, 1.5, 2, 2.5, 3] },
   barn: { name: '牧場擴建', icon: '🏚️', show: true, unit: '隻／種', costs: [200, 400, 700], values: [2, 3, 4, 5] },
   machine: { name: '加工速度', icon: '⚙️', costs: [60, 120, 200, 320], values: [1, 1.3, 1.6, 2, 2.5] },
@@ -119,12 +149,45 @@ const UPGRADES = {
 };
 const UPGRADE_KEYS = Object.keys(UPGRADES);
 
-// 客人種類：weight = 出現機率權重，patience / pay / tip 是倍率，rating = 評價影響倍率
+// 雇來的幫手：hire = 雇用費，wage = 每天早上付的工資
+const HELPERS = {
+  farmer: { name: '農場幫手', short: '農夫', hat: '👒', color: '#8d6e63', hire: 300, wage: 25, spawn: [11, 9],
+    desc: '挑現在能種、存貨最少的作物去種，澆水、抓蟲、趕烏鴉、收成、拿進貨架' },
+  rancher: { name: '牧場工', short: '牧場工', hat: '🤠', color: '#6d4c41', hire: 350, wage: 25, spawn: [11, 11],
+    desc: '餵動物、收雞蛋牛奶這些產出，拿進貨架' },
+  clerk: { name: '店員', short: '店員', hat: '🧢', color: '#5c6bc0', hire: 400, wage: 30, spawn: [22, 7],
+    desc: '站在收銀台幫客人結帳（架上有貨才行）' },
+};
+const HELPER_KEYS = Object.keys(HELPERS);
+
+// 店面和農場的設施：在結算畫面買，買了就一直有
+const FACILITIES = {
+  greenhouse: { name: '溫室', icon: '🏡', cost: 600, desc: '最下面那排農地蓋上溫室，一年四季什麼都能種' },
+  scarecrow: { name: '稻草人', icon: '🪆', cost: 150, desc: '烏鴉不會再來偷吃作物' },
+  dog: { name: '看門狗', icon: '🐕', cost: 300, desc: '小偷一進門就會被牠嚇跑' },
+  cat: { name: '店貓', icon: '🐈', cost: 250, desc: '在店裡走來走去，客人耐心 +10%' },
+};
+const FACILITY_KEYS = Object.keys(FACILITIES);
+
+// 帽子：純裝扮，買了之後每個人都可以戴
+const HATS = {
+  none: { name: '不戴', icon: '', cost: 0 },
+  cap: { name: '棒球帽', icon: '🧢', cost: 0 },
+  flower: { name: '小花', icon: '🌸', cost: 80 },
+  bow: { name: '蝴蝶結', icon: '🎀', cost: 120 },
+  grad: { name: '學士帽', icon: '🎓', cost: 200 },
+  tophat: { name: '紳士帽', icon: '🎩', cost: 250 },
+  crown: { name: '皇冠', icon: '👑', cost: 600 },
+};
+const HAT_KEYS = Object.keys(HATS);
+
+// 客人種類：weight = 出現機率權重，patience / pay / tip 是倍率，rating = 評價影響倍率，angry = 生氣時扣分倍率
 const CUSTOMER_TYPES = {
-  normal: { name: '一般客人', tag: '', weight: 1, patience: 1, pay: 1, tip: 1, rating: 1 },
-  hurry: { name: '急躁客', tag: '⚡', weight: 0.18, patience: 0.55, pay: 1, tip: 2, rating: 1, faces: ['😤', '🏃'] },
-  big: { name: '大戶', tag: '💎', weight: 0.06, patience: 1.4, pay: 1, tip: 1.5, rating: 1.5, faces: ['🤑', '🤵'] },
-  gourmet: { name: '美食家', tag: '🎩', weight: 0.12, patience: 1.1, pay: 1.5, tip: 1, rating: 2, faces: ['🧐', '🤓'] },
+  normal: { name: '一般客人', tag: '', weight: 1, patience: 1, pay: 1, tip: 1, rating: 1, angry: 1 },
+  hurry: { name: '急躁客', tag: '⚡', weight: 0.18, patience: 0.55, pay: 1, tip: 2, rating: 1, angry: 1, faces: ['😤', '🏃'] },
+  big: { name: '大戶', tag: '💎', weight: 0.06, patience: 1.4, pay: 1, tip: 1.5, rating: 1.5, angry: 1, faces: ['🤑', '🤵'] },
+  gourmet: { name: '美食家', tag: '🎩', weight: 0.12, patience: 1.1, pay: 1.5, tip: 1, rating: 2, angry: 1.6, faces: ['🧐', '🤓'] },
+  star: { name: '名人', tag: '🌟', weight: 0.025, patience: 0.9, pay: 2, tip: 2, rating: 10, angry: 3, faces: ['🤩', '😎'] },
 };
 
 // 全店的價格設定：mult = 售價倍率，spawn = 客人間隔倍率（越小客人越多），patience、rating = 耐心和評價成長倍率
@@ -137,7 +200,7 @@ const PRICE_LEVELS = [
 ];
 const PRICE_DEFAULT = 2;
 
-// 店面裝潢：在結算畫面買，買了就一直有效（x, y 是擺在哪裡，只是裝飾不會擋路）
+// 店面裝潢：在結算畫面買，買了就一直有效（spots 是擺在哪裡，只是裝飾不會擋路）
 const DECOR = {
   plant: { name: '盆栽', icon: '🪴', cost: 80, desc: '客人耐心 +10%', spots: [[15, 9], [15, 12], [28, 12]] },
   seats: { name: '座位區', icon: '🪑', cost: 150, desc: '客人耐心 +15%、評價成長變快', spots: [[26, 10], [27, 10], [26, 11], [27, 11]] },
@@ -147,7 +210,7 @@ const DECOR = {
 const DECOR_KEYS = Object.keys(DECOR);
 
 // 快捷聊天
-const CHAT = ['缺貨了！', '我去顧櫃台', '機器做好了', '幫忙澆水', '我去收成', '等我一下', '👍 好', '謝啦！'];
+const CHAT = ['缺貨了！', '我去顧櫃台', '機器做好了', '幫忙澆水', '我去收成', '等我一下', '👍 好', '謝啦！', '來幫我搬南瓜！', '有小偷！'];
 
 // 長期目標：達成就領獎金；final = 最終目標
 const GOALS = [
@@ -159,6 +222,9 @@ const GOALS = [
   { id: 'decor', text: '買齊全部裝潢', reward: 200, check: S => DECOR_KEYS.every(k => S.decor[k]) },
   { id: 'ranch', text: '四種動物都養', reward: 200, check: S => ANIMAL_KEYS.every(k => S.animals[k].count > 0) },
   { id: 'thief3', text: '抓到 3 個小偷', reward: 150, check: S => S.thievesCaught >= 3 },
+  { id: 'giant', text: '一起搬一顆巨無霸南瓜', reward: 150, check: S => S.giants >= 1 },
+  { id: 'fish20', text: '釣到 20 條魚', reward: 120, check: S => S.fishCaught >= 20 },
+  { id: 'celeb', text: '服務一位名人', reward: 150, check: S => S.starsServed >= 1 },
   { id: 'star5', text: '評價達到 ⭐5', reward: 300, check: S => S.rating >= 4.95 },
   { id: 'final', text: '最終目標：第 30 天結束前存到 $5,000', reward: 0, final: true, check: S => S.money >= 5000 && S.day <= 30 },
 ];
@@ -180,10 +246,18 @@ const QUEUE = [[22, 9], [22, 10], [22, 11], [20, 10], [24, 10], [20, 11]];
 const DOOR = [SHOP.doorX, SHOP.y1];
 const STREET_Y = 15.3;
 const PEN = { x0: 1, x1: 8, y0: 12, y1: 14 };               // 牧場（圍欄裡面），每種動物佔兩格寬
+const POND = { x0: 26, x1: 29, y0: 14, y1: 15 };            // 釣魚池
 const THIEF_SPOT = [23, 9];                                 // 小偷會溜到收銀台旁邊
-const PLOT_XS = [2, 4, 6, 8], PLOT_YS = [3, 5, 7, 9];
+const SCARECROW = [1, 6];
+const GREENHOUSE_Y = 9;                                     // 溫室蓋在這一排農地上
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const FACES = ['🙂', '😊', '🧐', '😃', '🤠', '👵', '👴', '🧒'];
+
+// 農地：lv = 要升級「農地」到第幾級才能用。前 16 格的順序跟舊存檔一樣
+const PLOT_DEFS = [];
+for (const y of [3, 5, 7, 9]) for (const x of [2, 4, 6, 8]) PLOT_DEFS.push({ x, y, lv: 0 });
+for (const y of [2, 10]) for (const x of [2, 4, 6, 8]) PLOT_DEFS.push({ x, y, lv: 1 });
+for (const y of [3, 5, 7, 9]) for (const x of [3, 5, 7]) PLOT_DEFS.push({ x, y, lv: 2 });
 
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
@@ -195,9 +269,17 @@ const emojiOf = k => (ITEMS[k] || ANIMALS[k]).emoji;
 // 已經擁有：作物、機器看有沒有解鎖；動物看有沒有買
 const owns = (S, k) => ANIMALS[k] ? S.animals[k].count > 0 : !!S.unlocked[k];
 const seasonOf = day => Math.floor((day - 1) / SEASON_LEN) % SEASONS.length;
+const isFestival = day => (day - 1) % SEASON_LEN + 1 === FESTIVAL_DAY;
 const inSeason = (S, crop) => CROPS[crop].seasons.includes(seasonOf(S.day));
 const machineIndex = product => MACHINES.findIndex(m => m.product === product);
-const itemList = (items, sep = ' ') => ITEM_KEYS.filter(k => items[k]).map(k => ITEMS[k].emoji + items[k]).join(sep);
+const itemList = (items, sep = ' ') => ITEM_KEYS.filter(k => items[k]).map(k => (ITEMS[k].gold ? '🌟' : '') + ITEMS[k].emoji + items[k]).join(sep);
+const plotOpen = (S, i) => PLOT_DEFS[i].lv <= S.upg.land;
+const isGreenhouse = (S, i) => !!S.owned.greenhouse && PLOT_DEFS[i].y === GREENHOUSE_Y;
+const weatherOf = S => WEATHERS[S.weather] || WEATHERS.cloudy;
+const weatherLabel = (S, key) => {
+  const w = WEATHERS[key] || WEATHERS.cloudy, snow = seasonOf(S.day) === 3 && w.snowName;
+  return (snow ? w.snowIcon : w.icon) + (snow ? w.snowName : w.name);
+};
 
 function gameHour(t) { return 6 + t / DAY_LEN * 16; }
 
@@ -205,26 +287,28 @@ function gameHour(t) { return 6 + t / DAY_LEN * 16; }
 function stockOf(S, k) {
   let n = S.shelves[k] || 0;
   for (const p of Object.values(S.players)) n += p.carry[k] || 0;
-  if (S.worker) n += S.worker.carry[k] || 0;
+  for (const h of Object.values(S.helpers)) if (h) n += h.carry[k] || 0;
   const mi = machineIndex(k);
   if (mi >= 0) n += S.machines[mi].out;
   return n;
 }
 
-// 現在拿得到的東西：作物要「這一季能種」或「還有存貨／田裡正在長」；
-// 加工品要「還有存貨」或「原料拿得到」（麵包 → 麵粉 → 小麥 會一路往回查）
-// 動物產品要有養那種動物
+// 現在拿得到的東西：作物要「這一季能種（或有溫室）」或「田裡正在長」；
+// 加工品要「機器正在做」或「每種原料都拿得到」（麵包 → 麵粉 → 小麥 會一路往回查）
+// 動物產品要有養那種動物；金星作物只有存貨才算
 function obtainable(S, k) {
   if (stockOf(S, k) > 0) return true;
+  if (GOLD[k]) return false;
+  if (k === 'fish') return true;
   if (GOODS[k]) return S.animals[GOODS[k].animal].count > 0;
   if (!S.unlocked[k]) return false;
-  if (CROPS[k]) return inSeason(S, k) || S.plots.some(pl => pl.crop === k && !pl.dead);
+  if (CROPS[k]) return inSeason(S, k) || !!S.owned.greenhouse || S.plots.some(pl => pl.crop === k && !pl.dead);
   const mi = machineIndex(k);
-  if (mi >= 0 && S.machines[mi].input >= PRODUCTS[k].need) return true;   // 機器裡正在做
-  return obtainable(S, PRODUCTS[k].from);
+  if (mi >= 0 && S.machines[mi].input > 0) return true;
+  return Object.keys(PRODUCTS[k].inputs).every(i => obtainable(S, i));
 }
 
-// 客人會直接買、而且現在拿得到的東西（中間材料像麵粉、生肉不算）
+// 客人會直接買、而且現在拿得到的東西（中間材料像麵粉、生肉、生魚不算）
 function sellable(S, k) {
   return !ITEMS[k].noDemand && obtainable(S, k);
 }
@@ -238,14 +322,21 @@ function isWall(x, y) {
 
 const isAt = (o, x, y) => o.x === x && o.y === y;
 const isShelf = (x, y) => SHELF_TILES.some(([sx, sy]) => sx === x && sy === y);
+const inPond = (x, y) => x >= POND.x0 && x <= POND.x1 && y >= POND.y0 && y <= POND.y1;
 
 function isBlocked(x, y) {
   if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return true;
   if (isWall(x, y)) return true;
   if (y === COUNTER.y && x >= COUNTER.x0 && x <= COUNTER.x1) return true;
-  if (isShelf(x, y) || isAt(BOARD, x, y) || isAt(WELL, x, y)) return true;
+  if (isShelf(x, y) || isAt(BOARD, x, y) || isAt(WELL, x, y) || inPond(x, y)) return true;
   if (x >= PEN.x0 && x <= PEN.x1 + 1 && y >= PEN.y0 && y <= PEN.y1) return true;   // 牧場圍欄
   return MACHINES.some(m => isAt(m, x, y));
+}
+
+// 池塘旁邊站得到的格子
+const POND_EDGE = [];
+for (let x = POND.x0 - 1; x <= POND.x1 + 1; x++) for (let y = POND.y0 - 1; y <= POND.y1 + 1; y++) {
+  if (!inPond(x, y) && !isBlocked(x, y) && DIRS.some(([dx, dy]) => inPond(x + dx, y + dy))) POND_EDGE.push([x, y]);
 }
 
 // 點到牧場的哪一格就是哪種動物
@@ -254,10 +345,7 @@ function penAt(x, y) {
   return ANIMAL_KEYS.find(k => x === ANIMALS[k].x || x === ANIMALS[k].x + 1) || null;
 }
 
-function plotIndex(x, y) {
-  const cx = PLOT_XS.indexOf(x), cy = PLOT_YS.indexOf(y);
-  return cx < 0 || cy < 0 ? -1 : cy * PLOT_XS.length + cx;
-}
+const plotIndex = (x, y) => PLOT_DEFS.findIndex(d => d.x === x && d.y === y);
 
 function objectAt(x, y) {
   const i = plotIndex(x, y);
@@ -266,6 +354,7 @@ function objectAt(x, y) {
   if (isShelf(x, y)) return { kind: 'shelf', x, y };
   if (isAt(BOARD, x, y)) return { kind: 'board', x, y };
   if (isAt(WELL, x, y)) return { kind: 'well', x, y };
+  if (inPond(x, y)) return { kind: 'pond', x, y };
   const mi = MACHINES.findIndex(m => isAt(m, x, y));
   if (mi >= 0) return { kind: 'machine', i: mi, x, y };
   const animal = penAt(x, y);
@@ -278,48 +367,60 @@ function newStats() {
   return {
     income: 0, served: 0, angry: 0, seedSpent: 0, upgradeSpent: 0, sold: zeroItems(), withered: 0,
     order: null, orderReward: 0, goals: [], ratingStart: null, thief: null, stolen: 0, wage: 0,
+    stormLoss: 0, crowLoss: 0, gold: 0, maxCombo: 0, giants: 0, fish: 0,
   };
 }
 
 const newAnimals = () => Object.fromEntries(ANIMAL_KEYS.map(k => [k, { count: 0, fed: 0, prog: 0, ready: 0 }]));
+const newPlot = d => ({ x: d.x, y: d.y, crop: null, g: 0, wet: 0, dry: 0, dead: false, perfect: false, bug: false, giant: false, lift: {} });
 
-// 每天早上決定今天會不會有小偷、幾點來（前兩天不會有）
-function rollThief(S) {
+function rollWeather(S) {
+  let r = Math.random() * WEATHER_KEYS.reduce((s, k) => s + WEATHERS[k].weight, 0);
+  for (const k of WEATHER_KEYS) if ((r -= WEATHERS[k].weight) <= 0) return k;
+  return 'cloudy';
+}
+
+// 每天早上決定今天的突發事件：小偷、烏鴉（前兩天都不會有）
+function rollEvents(S) {
   S.thiefAt = S.day >= 3 && Math.random() < 0.33 ? 10 + Math.random() * 8 : null;
+  S.crowAt = S.day >= 2 && !S.owned.scarecrow && Math.random() < 0.4 ? 9 + Math.random() * 8 : null;
+  S.stormDone = false;
 }
 
 function newState() {
-  const plots = [];
-  for (const y of PLOT_YS) for (const x of PLOT_XS) plots.push({ x, y, crop: null, g: 0, wet: 0, dry: 0, dead: false });
   return {
     phase: 'lobby',               // 'lobby' = 準備畫面，'play' = 遊戲中，'summary' = 當天結算
+    mv: 2,                        // 存檔格式：加工機的 input 是排了幾份
     day: 1, t: 0, money: 50, served: 0,
     stats: newStats(),
     upg: Object.fromEntries(UPGRADE_KEYS.map(k => [k, 0])),
     unlocked: Object.fromEntries(START_UNLOCKED.map(k => [k, true])),
-    plots,
+    plots: PLOT_DEFS.map(newPlot),
     shelves: zeroItems(),
     machines: MACHINES.map(() => ({ input: 0, out: 0, p: 0 })),
     order: null,
     rating: 3,                    // 商店評價 1～5 星
     priceLv: PRICE_DEFAULT,
-    decor: {},
+    decor: {}, owned: {}, hats: { none: true, cap: true },
     goals: {},                    // 達成的目標：id → 第幾天達成
-    ordersDone: 0,
+    ordersDone: 0, thievesCaught: 0, giants: 0, fishCaught: 0, starsServed: 0,
     animals: newAnimals(),
-    thief: null, thiefAt: null, thievesCaught: 0,
-    worker: null,
+    weather: 'cloudy', weatherNext: 'sunny',
+    thief: null, thiefAt: null, crow: null, crowAt: null, stormDone: false,
+    helpers: { farmer: null, rancher: null, clerk: null },
+    dog: { x: 24, y: 14.5 }, cat: { x: 25, y: 11, tx: 25, ty: 11 },
+    combo: { n: 0, until: 0 },
     players: {},
     customers: [], nextId: 1, spawnT: 3,
-    fx: [], fxSeq: 0,
+    fx: [], fxSeq: 0, banner: null,
   };
 }
 
 const decorBonus = S => ({
-  patience: 1 + (S.decor.plant ? 0.1 : 0) + (S.decor.seats ? 0.15 : 0),
+  patience: 1 + (S.decor.plant ? 0.1 : 0) + (S.decor.seats ? 0.15 : 0) + (S.owned.cat ? 0.1 : 0),
   rating: S.decor.seats ? 1.3 : 1,
   spawn: S.decor.sign ? 0.85 : 1,
-  tip: S.decor.music ? 1.3 : 1,
+  tip: (S.decor.music ? 1.3 : 1) * (isFestival(S.day) ? 1.5 : 1),
 });
 const priceLevel = S => PRICE_LEVELS[S.priceLv];
 const priceOf = (S, k) => Math.round(ITEMS[k].price * priceLevel(S).mult);
@@ -339,7 +440,7 @@ function addPlayer(S, id, name) {
   const [x, y] = SPAWNS[n % SPAWNS.length];
   return S.players[id] = {
     id, name: cleanName(name) || `玩家${n + 1}`, color: freeColor(S), x, y, path: [], action: null,
-    carry: zeroItems(), water: upgValue(S, 'can'), seed: 'tomato', connected: true, ready: false,
+    carry: zeroItems(), water: upgValue(S, 'can'), seed: 'tomato', connected: true, ready: false, hat: 'none', fishing: null,
   };
 }
 
@@ -382,8 +483,9 @@ function findPath(sx, sy, goals) {
 function planTap(x, y, tx, ty) {
   const obj = objectAt(tx, ty);
   let goals;
-  // 牧場：走到那一欄圍欄上方的走道
+  // 牧場：走到那一欄圍欄上方的走道；池塘：走到池邊
   if (obj && obj.kind === 'pen') goals = [[ANIMALS[obj.animal].x, PEN.y0 - 1], [ANIMALS[obj.animal].x + 1, PEN.y0 - 1]];
+  else if (obj && obj.kind === 'pond') goals = POND_EDGE;
   else if (obj && obj.kind !== 'plot') goals = DIRS.map(([dx, dy]) => [tx + dx, ty + dy]).filter(([gx, gy]) => !isBlocked(gx, gy));
   else if (!isBlocked(tx, ty)) goals = [[tx, ty]];
   else return null;
@@ -391,24 +493,20 @@ function planTap(x, y, tx, ty) {
   return path && { path, obj };
 }
 
+// 走到某個會動的東西旁邊（小偷、隊友）
+function chaseTo(p, tx, ty, action) {
+  const goals = [[tx, ty], ...DIRS.map(([dx, dy]) => [tx + dx, ty + dy])].filter(([gx, gy]) => !isBlocked(gx, gy));
+  const path = findPath(Math.round(p.x), Math.round(p.y), goals);
+  if (path) { p.path = path; p.action = action; }
+}
+
 function handleTap(S, pid, tx, ty) {
   const p = S.players[pid];
-  // 點到小偷：追過去抓
+  p.fishing = null;
   const th = S.thief;
-  if (th && th.state !== 'flee' && Math.round(th.x) === tx && Math.round(th.y) === ty) {
-    const goals = [[tx, ty], ...DIRS.map(([dx, dy]) => [tx + dx, ty + dy])].filter(([gx, gy]) => !isBlocked(gx, gy));
-    const path = findPath(Math.round(p.x), Math.round(p.y), goals);
-    if (path) { p.path = path; p.action = { kind: 'catch' }; }
-    return;
-  }
-  // 點到隊友：走到他旁邊把身上的東西交給他
+  if (th && th.state !== 'flee' && Math.round(th.x) === tx && Math.round(th.y) === ty) return chaseTo(p, tx, ty, { kind: 'catch' });
   const mate = Object.values(S.players).find(o => o !== p && o.connected && Math.round(o.x) === tx && Math.round(o.y) === ty);
-  if (mate) {
-    const goals = [[tx, ty], ...DIRS.map(([dx, dy]) => [tx + dx, ty + dy])].filter(([gx, gy]) => !isBlocked(gx, gy));
-    const path = findPath(Math.round(p.x), Math.round(p.y), goals);
-    if (path) { p.path = path; p.action = { kind: 'give', id: mate.id }; }
-    return;
-  }
+  if (mate) return chaseTo(p, tx, ty, { kind: 'give', id: mate.id });
   const plan = planTap(p.x, p.y, tx, ty);
   if (!plan) return;
   p.path = plan.path;
@@ -425,112 +523,183 @@ function moveAlong(p, move) {
   }
 }
 
+// 朝某一點直線移動（不管牆壁，給動物、小偷、客人用），到了回傳 true
+function moveToward(o, tx, ty, move) {
+  const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy);
+  if (d <= move) { o.x = tx; o.y = ty; return true; }
+  o.x += dx / d * move; o.y += dy / d * move;
+  return false;
+}
+
+// ---------- 購買 ----------
+function spend(S, p, cost, what) {
+  if (S.money < cost) { say(S, p, `錢不夠${what}`); return false; }
+  S.money -= cost;
+  S.stats.upgradeSpent += cost;
+  return true;
+}
+
 function buyUpgrade(S, p, k) {
   const u = UPGRADES[k];
   if (!u) return;
   const lv = S.upg[k];
   if (lv >= u.costs.length) return say(S, p, '已經滿級了');
-  if (S.money < u.costs[lv]) return say(S, p, '錢不夠升級');
-  S.money -= u.costs[lv];
-  S.stats.upgradeSpent += u.costs[lv];
+  if (!spend(S, p, u.costs[lv], '升級')) return;
   S.upg[k]++;
   addFx(S, p.x, p.y - 0.7, `${u.icon} ${u.name} ${u.labels ? u.labels[S.upg[k]] : 'Lv' + (S.upg[k] + 1)}！`, '#ffca28', 'up');
 }
 
+const unlockBlockers = (S, k) => (UNLOCKS[k].requires || []).filter(r => !owns(S, r));
+
+function buyUnlock(S, p, k) {
+  const u = UNLOCKS[k];
+  if (!u || S.unlocked[k]) return;
+  const missing = unlockBlockers(S, k);
+  if (missing.length) return say(S, p, '要先有' + missing.map(nameOf).join('、'));
+  if (!spend(S, p, u.cost, '解鎖')) return;
+  S.unlocked[k] = true;
+  addFx(S, p.x, p.y - 0.7, `解鎖 ${ITEMS[k].emoji}${ITEMS[k].name}！`, '#ffca28', 'up');
+}
+
 const animalCost = (S, k) => S.animals[k].count === 0 ? ANIMALS[k].cost : ANIMALS[k].cost2;
-
-// ---------- 農場幫手 ----------
-function newWorker() {
-  const [x, y] = WORKER.spawn;
-  return { npc: true, name: '幫手', color: '#8d6e63', connected: true, x, y, path: [], action: null, carry: zeroItems(), water: 99, seed: 'tomato', think: 0, off: false };
-}
-
-function setWorker(S, p, hire) {
-  if (hire && !S.worker) {
-    if (S.money < WORKER.hireCost) return say(S, p, '錢不夠雇幫手');
-    S.money -= WORKER.hireCost;
-    S.stats.upgradeSpent += WORKER.hireCost;
-    S.worker = newWorker();
-    addFx(S, S.worker.x, S.worker.y - 0.7, '👨‍🌾 幫手來上班了！', '#ffca28', 'up');
-  } else if (!hire && S.worker) {
-    // 解雇前把他身上的東西放回貨架
-    for (const k of ITEM_KEYS) S.shelves[k] += S.worker.carry[k];
-    S.worker = null;
-    addFx(S, p.x, p.y - 0.7, '幫手下班了', '#ffe082', 'tick');
-  }
-}
-
-// 現在能種的作物裡，存貨（加上田裡正在長的）最少的那一種
-function workerCrop(S) {
-  const growing = k => S.plots.filter(pl => pl.crop === k && !pl.dead).length * CROPS[k].yield;
-  const opts = CROP_KEYS.filter(k => S.unlocked[k] && inSeason(S, k) && S.money >= CROPS[k].seed);
-  opts.sort((a, b) => (stockOf(S, a) + growing(a)) - (stockOf(S, b) + growing(b)));
-  return opts[0] || null;
-}
-
-// 幫手每隔一下想一次要做什麼：拿滿了去上架 → 收成熟的 → 清枯掉的 → 澆水 → 種最缺的 → 有東西就上架
-function planWorker(S, w) {
-  const dist = pl => Math.abs(pl.x - w.x) + Math.abs(pl.y - w.y);
-  const nearest = list => list.sort((a, b) => dist(a) - dist(b))[0];
-  const total = carryTotal(w.carry), full = total >= carryCap(S) - 1;
-  const sprinkler = upgValue(S, 'sprinkler') > 0;
-  const ripe = S.plots.filter(pl => pl.crop && !pl.dead && pl.g >= 1);
-  const dead = S.plots.filter(pl => pl.dead);
-  const thirsty = sprinkler ? [] : S.plots.filter(pl => pl.crop && !pl.dead && pl.g < 1 && pl.wet <= 0);
-  const empty = S.plots.filter(pl => !pl.crop);
-  let target = null;
-  if (!full && ripe.length) target = nearest(ripe);
-  else if (dead.length) target = nearest(dead);
-  else if (thirsty.length) target = nearest(thirsty);
-  else if (empty.length && !full) {
-    const crop = workerCrop(S);
-    if (crop) { w.seed = crop; target = nearest(empty); }
-  }
-  if (!target && total > 0) target = { x: SHELF_TILES[0][0], y: SHELF_TILES[0][1] };
-  if (full && ripe.length) target = { x: SHELF_TILES[0][0], y: SHELF_TILES[0][1] };
-  if (!target) return;
-  const plan = planTap(w.x, w.y, target.x, target.y);
-  if (plan) { w.path = plan.path; w.action = plan.obj; }
-}
-
-function stepWorker(S, dt) {
-  const w = S.worker;
-  if (!w || w.off) return;
-  moveAlong(w, WORKER.speed * dt);
-  if (w.path.length) return;
-  if (w.action) {
-    const a = w.action;
-    w.action = null;
-    w.water = 99;              // 幫手自己會去打水，不用管
-    if (a.kind === 'plot') tapPlot(S, w, S.plots[a.i]);
-    else if (a.kind === 'shelf') tapShelf(S, w, a);
-    w.think = 0.3;
-    return;
-  }
-  if ((w.think -= dt) <= 0) { w.think = 0.5; planWorker(S, w); }
-}
 
 function buyAnimal(S, p, k) {
   const def = ANIMALS[k];
   if (!def) return;
   const a = S.animals[k];
   if (a.count >= animalMax(S)) return say(S, p, `${def.name}已經養滿 ${animalMax(S)} 隻了，可以升級牧場擴建`);
-  const cost = animalCost(S, k);
-  if (S.money < cost) return say(S, p, `錢不夠買${def.name}`);
-  S.money -= cost;
-  S.stats.upgradeSpent += cost;
+  if (!spend(S, p, animalCost(S, k), `買${def.name}`)) return;
   a.count++;
   addFx(S, p.x, p.y - 0.7, `${def.emoji} 買了一隻${def.name}！`, '#ffca28', 'up');
 }
 
 function buyDecor(S, p, k) {
   const d = DECOR[k];
-  if (!d || S.decor[k]) return;
-  if (S.money < d.cost) return say(S, p, '錢不夠買裝潢');
-  S.money -= d.cost;
-  S.stats.upgradeSpent += d.cost;
+  if (!d || S.decor[k] || !spend(S, p, d.cost, '買裝潢')) return;
   S.decor[k] = true;
   addFx(S, p.x, p.y - 0.7, `${d.icon} ${d.name}擺好了！`, '#ffca28', 'up');
+}
+
+function buyFacility(S, p, k) {
+  const f = FACILITIES[k];
+  if (!f || S.owned[k] || !spend(S, p, f.cost, `買${f.name}`)) return;
+  S.owned[k] = true;
+  if (k === 'scarecrow') { S.crowAt = null; S.crow = null; }
+  addFx(S, p.x, p.y - 0.7, `${f.icon} ${f.name}到了！`, '#ffca28', 'up');
+}
+
+function buyHat(S, p, k) {
+  const h = HATS[k];
+  if (!h || S.hats[k] || !spend(S, p, h.cost, '買帽子')) return;
+  S.hats[k] = true;
+  p.hat = k;
+  addFx(S, p.x, p.y - 0.7, `${h.icon} 買了${h.name}！`, '#ffca28', 'up');
+}
+
+// ---------- 幫手 ----------
+function newHelper(kind) {
+  const def = HELPERS[kind], [x, y] = def.spawn;
+  return { kind, npc: true, name: def.short, color: def.color, connected: true, x, y, path: [], action: null, carry: zeroItems(), water: 99, seed: 'tomato', think: 0, off: false };
+}
+
+function setHelper(S, p, kind, hire) {
+  const def = HELPERS[kind];
+  if (!def) return;
+  if (hire && !S.helpers[kind]) {
+    if (!spend(S, p, def.hire, `雇${def.name}`)) return;
+    S.helpers[kind] = newHelper(kind);
+    addFx(S, def.spawn[0], def.spawn[1] - 0.7, `${def.hat} ${def.name}來上班了！`, '#ffca28', 'up');
+  } else if (!hire && S.helpers[kind]) {
+    // 解雇前把他身上的東西放回貨架
+    for (const k of ITEM_KEYS) S.shelves[k] += S.helpers[kind].carry[k];
+    S.helpers[kind] = null;
+    addFx(S, p.x, p.y - 0.7, `${def.name}下班了`, '#ffe082', 'tick');
+  }
+}
+
+// 現在能種的作物裡，存貨（加上田裡正在長的）最少的那一種
+function farmerCrop(S) {
+  const growing = k => S.plots.filter(pl => pl.crop === k && !pl.dead).length * CROPS[k].yield;
+  const opts = CROP_KEYS.filter(k => S.unlocked[k] && inSeason(S, k) && S.money >= CROPS[k].seed);
+  opts.sort((a, b) => (stockOf(S, a) + growing(a)) - (stockOf(S, b) + growing(b)));
+  return opts[0] || null;
+}
+
+const shelfTarget = () => ({ x: SHELF_TILES[0][0], y: SHELF_TILES[0][1] });
+
+// 農場幫手：趕烏鴉 → 收成熟的 → 抓蟲 → 清枯掉的 → 澆水 → 種最缺的 → 有東西就上架
+function planFarmer(S, w) {
+  const dist = o => Math.abs(o.x - w.x) + Math.abs(o.y - w.y);
+  const nearest = list => list.sort((a, b) => dist(a) - dist(b))[0];
+  const total = carryTotal(w.carry), full = total >= carryCap(S) - 1;
+  const wet = upgValue(S, 'sprinkler') > 0 || weatherOf(S).rain;
+  const open = S.plots.filter((pl, i) => plotOpen(S, i));
+  const ripe = open.filter(pl => pl.crop && !pl.dead && pl.g >= 1 && !pl.giant);
+  let target = null;
+  if (S.crow) target = S.plots[S.crow.i];
+  else if (!full && ripe.length) target = nearest(ripe);
+  else {
+    const bugs = open.filter(pl => pl.bug && pl.crop && !pl.dead);
+    const dead = open.filter(pl => pl.dead);
+    const thirsty = wet ? [] : open.filter(pl => pl.crop && !pl.dead && pl.g < 1 && pl.wet <= 0);
+    const empty = open.filter(pl => !pl.crop);
+    if (bugs.length) target = nearest(bugs);
+    else if (dead.length) target = nearest(dead);
+    else if (thirsty.length) target = nearest(thirsty);
+    else if (empty.length && !full) {
+      const crop = farmerCrop(S);
+      if (crop) { w.seed = crop; target = nearest(empty); }
+    }
+  }
+  if ((!target && total > 0) || (full && ripe.length && !S.crow)) target = shelfTarget();
+  return target;
+}
+
+// 牧場工：收產出 → 餵沒吃的 → 有東西就上架
+function planRancher(S, w) {
+  const total = carryTotal(w.carry), full = total >= carryCap(S) - 1;
+  const owned = ANIMAL_KEYS.filter(k => S.animals[k].count > 0);
+  const ready = owned.find(k => S.animals[k].ready > 0);
+  const hungry = owned.find(k => S.animals[k].fed <= 0 && S.money >= FEED_COST * S.animals[k].count);
+  let target = null;
+  if (!full && ready) target = { x: ANIMALS[ready].x, y: PEN.y0 };
+  else if (hungry) target = { x: ANIMALS[hungry].x, y: PEN.y0 };
+  if ((!target && total > 0) || (full && ready)) target = shelfTarget();
+  return target;
+}
+
+function stepHelpers(S, dt) {
+  for (const kind of HELPER_KEYS) {
+    const w = S.helpers[kind];
+    if (!w || w.off) continue;
+    if (kind === 'clerk') {
+      // 店員站在收銀台後面，櫃台前有客人、架上有貨就結帳
+      if ((w.think -= dt) <= 0) {
+        w.think = 1.2;
+        const c = frontCustomer(S);
+        if (c && ITEM_KEYS.every(k => (c.want[k] || 0) <= S.shelves[k])) tapRegister(S, w);
+      }
+      continue;
+    }
+    moveAlong(w, upgValue(S, 'speed') * dt);      // 幫手也吃得到走路速度升級
+    if (w.path.length) continue;
+    if (w.action) {
+      const a = w.action;
+      w.action = null;
+      w.water = 99;              // 幫手自己會去打水，不用管
+      if (a.kind === 'plot') tapPlot(S, w, a.i);
+      else if (a.kind === 'shelf') tapShelf(S, w, a);
+      else if (a.kind === 'pen') tapPen(S, w, a.animal);
+      w.think = 0.3;
+      continue;
+    }
+    if ((w.think -= dt) > 0) continue;
+    w.think = 0.5;
+    const target = kind === 'farmer' ? planFarmer(S, w) : planRancher(S, w);
+    if (!target) continue;
+    const plan = planTap(w.x, w.y, target.x, target.y);
+    if (plan) { w.path = plan.path; w.action = plan.obj; }
+  }
 }
 
 function giveItems(S, p, mate) {
@@ -548,17 +717,6 @@ function giveItems(S, p, mate) {
   addFx(S, mate.x, mate.y - 0.7, `收到 ${itemList(moved)}`, '#c5e1a5', 'give');
 }
 
-function buyUnlock(S, p, k) {
-  const u = UNLOCKS[k];
-  if (!u || S.unlocked[k]) return;
-  if (u.requires && !owns(S, u.requires)) return say(S, p, `要先${ANIMALS[u.requires] ? '養' : '解鎖'}${nameOf(u.requires)}`);
-  if (S.money < u.cost) return say(S, p, '錢不夠解鎖');
-  S.money -= u.cost;
-  S.stats.upgradeSpent += u.cost;
-  S.unlocked[k] = true;
-  addFx(S, p.x, p.y - 0.7, `解鎖 ${ITEMS[k].emoji}${ITEMS[k].name}！`, '#ffca28', 'up');
-}
-
 function setProfile(S, p, msg) {
   const name = cleanName(msg.name);
   if (name) p.name = name;
@@ -570,13 +728,17 @@ function setProfile(S, p, msg) {
 function applyInput(S, pid, msg) {
   const p = S.players[pid];
   if (!msg || !p) return;
+  const notLobby = S.phase !== 'lobby';
   if (msg.t === 'tap') { if (S.phase === 'play') handleTap(S, pid, msg.x | 0, msg.y | 0); }
   else if (msg.t === 'seed') { if (CROPS[msg.c] && S.unlocked[msg.c]) p.seed = msg.c; }
-  else if (msg.t === 'upgrade') { if (S.phase !== 'lobby') buyUpgrade(S, p, msg.k); }
-  else if (msg.t === 'unlock') { if (S.phase !== 'lobby') buyUnlock(S, p, msg.k); }
-  else if (msg.t === 'decor') { if (S.phase !== 'lobby') buyDecor(S, p, msg.k); }
-  else if (msg.t === 'animal') { if (S.phase !== 'lobby') buyAnimal(S, p, msg.k); }
-  else if (msg.t === 'worker') { if (S.phase !== 'lobby') setWorker(S, p, !!msg.v); }
+  else if (msg.t === 'upgrade') { if (notLobby) buyUpgrade(S, p, msg.k); }
+  else if (msg.t === 'unlock') { if (notLobby) buyUnlock(S, p, msg.k); }
+  else if (msg.t === 'decor') { if (notLobby) buyDecor(S, p, msg.k); }
+  else if (msg.t === 'facility') { if (notLobby) buyFacility(S, p, msg.k); }
+  else if (msg.t === 'animal') { if (notLobby) buyAnimal(S, p, msg.k); }
+  else if (msg.t === 'helper') { if (notLobby) setHelper(S, p, msg.k, !!msg.v); }
+  else if (msg.t === 'buyhat') { if (notLobby) buyHat(S, p, msg.k); }
+  else if (msg.t === 'hat') { if (S.hats[msg.k]) p.hat = msg.k; }
   else if (msg.t === 'price') { if (PRICE_LEVELS[msg.v]) S.priceLv = msg.v; }
   else if (msg.t === 'chat') {
     if (CHAT[msg.i]) { p.chat = { text: CHAT[msg.i], ttl: 3.5 }; addFx(S, p.x, p.y, '', null, 'chat'); }
@@ -600,9 +762,9 @@ function sendAway(c) {
 
 // ---------- 特殊訂單 ----------
 function newOrder(S) {
-  // 跟客人一樣隨機挑，當季熱門的比較容易被選到
+  // 跟客人一樣隨機挑，當季熱門的比較容易被選到（金星作物不會進訂單）
   const kinds = new Set();
-  for (let i = 0; i < (S.day >= 6 ? 3 : 2); i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
+  for (let i = 0; i < (S.day >= 6 ? 3 : 2); i++) { const k = pickWanted(S, kinds, true); if (k) kinds.add(k); }
   const need = {};
   let value = 0;
   for (const k of kinds) {
@@ -645,28 +807,62 @@ function deliverOrder(S, p) {
 }
 
 // ---------- 點了東西之後要做的事 ----------
-function tapPlot(S, p, pl) {
+function clearPlot(pl) {
+  Object.assign(pl, { crop: null, g: 0, wet: 0, dry: 0, dead: false, perfect: false, bug: false, giant: false, lift: {} });
+}
+
+// 巨無霸南瓜要兩個人在 3 秒內都點一下才搬得動（只有一個人在線上時一個人就行）
+function liftGiant(S, p, pl) {
+  pl.lift[p.npc ? 'npc' : p.id] = S.t;
+  const lifters = Object.values(pl.lift).filter(t => S.t - t <= 3).length;
+  if (lifters < 2 && onlinePlayers(S).length > 1) return say(S, p, '巨無霸南瓜！要另一個人 3 秒內也點一下才搬得動');
+  S.money += 300;
+  S.stats.income += 300;
+  S.stats.giants++;
+  S.giants++;
+  changeRating(S, 0.1);
+  addFx(S, pl.x, pl.y - 0.6, '巨無霸南瓜賣了 $300！', '#ffca28', 'order');
+  clearPlot(pl);
+}
+
+function tapPlot(S, p, i) {
+  const pl = S.plots[i];
+  if (!plotOpen(S, i)) return say(S, p, '這塊地還沒買（升級「農地」）');
+  if (S.crow && S.crow.i === i) {
+    S.crow = null;
+    return addFx(S, pl.x, pl.y - 0.6, '🐦 烏鴉被趕走了！', '#c5e1a5', 'give');
+  }
+  if (pl.bug && pl.crop && !pl.dead) {
+    pl.bug = false;
+    return addFx(S, pl.x, pl.y - 0.6, '🐛 抓到蟲了', '#c5e1a5', 'give');
+  }
   if (!pl.crop) {
     const c = CROPS[p.seed];
     if (!S.unlocked[p.seed]) return say(S, p, `還沒解鎖${c.name}`);
-    if (!inSeason(S, p.seed)) return say(S, p, `${SEASONS[seasonOf(S.day)].name}天不能種${c.name}`);
+    if (!inSeason(S, p.seed) && !isGreenhouse(S, i)) return say(S, p, `${SEASONS[seasonOf(S.day)].name}天不能種${c.name}${S.owned.greenhouse ? '（可以種在溫室）' : ''}`);
     if (S.money < c.seed) return say(S, p, '錢不夠買種子');
     S.money -= c.seed;
     S.stats.seedSpent += c.seed;
-    Object.assign(pl, { crop: p.seed, g: 0, wet: 0, dry: 0, dead: false });
+    clearPlot(pl);
+    Object.assign(pl, { crop: p.seed, perfect: true });
     addFx(S, pl.x, pl.y - 0.4, `-$${c.seed}`, '#ef9a9a', 'plant');
-    if (p.water > 0 && !upgValue(S, 'sprinkler')) { p.water--; pl.wet = WET_TIME; }   // 有水就順便澆
+    if (p.water > 0 && !upgValue(S, 'sprinkler') && !weatherOf(S).rain) { p.water--; pl.wet = WET_TIME; }   // 有水就順便澆
   } else if (pl.dead) {
-    Object.assign(pl, { crop: null, g: 0, wet: 0, dry: 0, dead: false });
+    clearPlot(pl);
     say(S, p, '清掉枯萎的作物');
   } else if (pl.g >= 1) {
+    if (pl.giant) return liftGiant(S, p, pl);
     const room = carryCap(S) - carryTotal(p.carry);
     if (room <= 0) return say(S, p, '拿不下了');
-    const c = CROPS[pl.crop], n = Math.min(room, c.yield);
-    p.carry[pl.crop] += n;
-    addFx(S, pl.x, pl.y - 0.4, `+${n}${c.emoji}`, '#c5e1a5', 'harvest');
-    Object.assign(pl, { crop: null, g: 0, wet: 0, dry: 0 });
-  } else if (pl.wet > 0 || upgValue(S, 'sprinkler')) {
+    const c = CROPS[pl.crop];
+    // 從頭到尾都沒缺過水，就有機會長出金星作物；肥料等級越高機會越大
+    const gold = pl.perfect && Math.random() < 0.2 + 0.08 * S.upg.soil;
+    const item = gold ? goldOf(pl.crop) : pl.crop, n = Math.min(room, c.yield);
+    p.carry[item] += n;
+    if (gold) S.stats.gold += n;
+    addFx(S, pl.x, pl.y - 0.4, gold ? `🌟金星${c.name} +${n}！` : `+${n}${c.emoji}`, gold ? '#ffca28' : '#c5e1a5', gold ? 'up' : 'harvest');
+    clearPlot(pl);
+  } else if (pl.wet > 0 || upgValue(S, 'sprinkler') || weatherOf(S).rain) {
     say(S, p, `長大中 ${Math.floor(pl.g * 100)}%`);
   } else if (p.water > 0) {
     p.water--;
@@ -689,9 +885,9 @@ function tapShelf(S, p, a) {
   else say(S, p, carryTotal(p.carry) ? '貨架滿了' : '身上沒有東西');
 }
 
-// 有成品就拿走成品；沒有的話從貨架拿一份原料（不夠才用身上的）開始加工
+// 有成品就拿走成品；沒有的話從貨架拿一份原料（不夠才用身上的）開始做
 function tapMachine(S, p, a) {
-  const m = S.machines[a.i], def = MACHINES[a.i], prod = PRODUCTS[def.product], raw = prod.from;
+  const m = S.machines[a.i], def = MACHINES[a.i], prod = PRODUCTS[def.product];
   if (!S.unlocked[def.product]) return say(S, p, `${def.name}還沒解鎖`);
   if (m.out > 0) {
     const take = Math.min(m.out, carryCap(S) - carryTotal(p.carry));
@@ -700,13 +896,16 @@ function tapMachine(S, p, a) {
     p.carry[def.product] += take;
     return addFx(S, a.x, a.y - 0.6, `+${take}${prod.emoji}`, '#c5e1a5', 'harvest');
   }
-  if (m.input + prod.need > MACHINE_IN) return say(S, p, `${def.name}排滿了`);
-  const fromShelf = S.shelves[raw] >= prod.need;
-  if (!fromShelf && p.carry[raw] < prod.need) return say(S, p, `架上的${ITEMS[raw].name}不夠（要 ${prod.need} 個）`);
-  if (fromShelf) S.shelves[raw] -= prod.need;
-  else p.carry[raw] -= prod.need;
-  m.input += prod.need;
-  addFx(S, a.x - 1, a.y - 0.3, `${ITEMS[raw].emoji}×${prod.need} → ${prod.emoji}`, '#c5e1a5', 'plant');
+  if (m.input >= MACHINE_QUEUE) return say(S, p, `${def.name}排滿了`);
+  const missing = Object.entries(prod.inputs).filter(([k, n]) => S.shelves[k] + p.carry[k] < n);
+  if (missing.length) return say(S, p, '架上不夠：' + missing.map(([k, n]) => `${ITEMS[k].name}×${n}`).join('、'));
+  for (const [k, n] of Object.entries(prod.inputs)) {
+    const fromShelf = Math.min(n, S.shelves[k]);
+    S.shelves[k] -= fromShelf;
+    p.carry[k] -= n - fromShelf;
+  }
+  m.input++;
+  addFx(S, a.x - 1, a.y - 0.3, `${recipeText(def.product)} → ${prod.emoji}`, '#c5e1a5', 'plant');
 }
 
 function tapRegister(S, p) {
@@ -721,18 +920,25 @@ function tapRegister(S, p) {
     S.stats.sold[k] += c.want[k];
     total += c.want[k] * priceOf(S, k);
   }
-  total = Math.round(total * type.pay);
+  // 連擊：上一位結完 8 秒內又結一位，整筆多 5%，最多 +25%
+  const combo = S.combo;
+  combo.n = S.t <= combo.until ? combo.n + 1 : 1;
+  combo.until = S.t + 8;
+  S.stats.maxCombo = Math.max(S.stats.maxCombo, combo.n);
+  total = Math.round(total * type.pay * (1 + 0.05 * Math.min(combo.n - 1, 5)));
   const ratio = c.patience / c.maxPatience;
-  // 評價越高小費越多；音樂裝潢、急躁客也會多給
+  // 評價越高小費越多；音樂裝潢、節慶、急躁客也會多給
   const tip = Math.round(total * 0.3 * ratio * type.tip * decorBonus(S).tip * (0.6 + 0.12 * S.rating));
   S.money += total + tip;
   S.stats.income += total + tip;
   S.stats.served++;
   S.served++;
+  if (c.type === 'star') S.starsServed++;
   changeRating(S, 0.05 * (0.5 + ratio * 0.5) * type.rating * priceLevel(S).rating * decorBonus(S).rating);
   c.face = '😄';
   sendAway(c);
-  addFx(S, REGISTER.x, REGISTER.y - 0.6, `+$${total}` + (tip ? ` 小費$${tip}` : ''), '#a5d6a7', 'coin');
+  const comboText = combo.n >= 2 ? `  連擊×${combo.n}` : '';
+  addFx(S, REGISTER.x, REGISTER.y - 0.6, `+$${total}` + (tip ? ` 小費$${tip}` : '') + comboText, c.type === 'star' ? '#ffca28' : '#a5d6a7', 'coin');
 }
 
 // 點牧場：有產出就收；沒吃東西就餵（每隻 $FEED_COST）；吃飽了就看進度
@@ -761,9 +967,7 @@ function catchThief(S, p) {
   const th = S.thief;
   if (!th || th.state === 'flee') return;
   if (Math.hypot(th.x - p.x, th.y - p.y) > 1.6) return say(S, p, '小偷跑掉了，再點他一次');
-  th.state = 'flee';
-  th.caught = true;
-  th.wp = [[DOOR[0], DOOR[1]], [DOOR[0], STREET_Y + 1.5]];
+  thiefFlee(th, true);
   S.money += 30;
   S.thievesCaught++;
   S.stats.thief = 'caught';
@@ -771,8 +975,30 @@ function catchThief(S, p) {
   addFx(S, th.x, th.y - 0.7, '抓到小偷！+$30', '#ffca28', 'order');
 }
 
+function thiefFlee(th, caught) {
+  th.state = 'flee';
+  th.caught = caught;
+  th.wp = [[DOOR[0], DOOR[1]], [DOOR[0], STREET_Y + 1.5]];
+}
+
+// 釣魚：站到池邊之後等幾秒，大多是魚，偶爾釣到舊靴子或寶物
+function finishFishing(S, p) {
+  p.fishing = null;
+  const r = Math.random();
+  if (r < 0.06) return addFx(S, p.x, p.y - 0.7, '🥾 釣到舊靴子…', '#ffe082', 'tick');
+  if (r < 0.1) {
+    S.money += 50;
+    return addFx(S, p.x, p.y - 0.7, '💰 釣到寶箱！+$50', '#ffca28', 'order');
+  }
+  if (carryTotal(p.carry) >= carryCap(S)) return say(S, p, '拿不下魚了');
+  p.carry.fish++;
+  S.fishCaught++;
+  S.stats.fish++;
+  addFx(S, p.x, p.y - 0.7, '+1🐟', '#81d4fa', 'harvest');
+}
+
 function doAction(S, p, a) {
-  if (a.kind === 'plot') tapPlot(S, p, S.plots[a.i]);
+  if (a.kind === 'plot') tapPlot(S, p, a.i);
   else if (a.kind === 'shelf') tapShelf(S, p, a);
   else if (a.kind === 'machine') tapMachine(S, p, a);
   else if (a.kind === 'register') tapRegister(S, p);
@@ -780,6 +1006,7 @@ function doAction(S, p, a) {
   else if (a.kind === 'give') giveItems(S, p, S.players[a.id]);
   else if (a.kind === 'pen') tapPen(S, p, a.animal);
   else if (a.kind === 'catch') catchThief(S, p);
+  else if (a.kind === 'pond') { p.fishing = { t: 3 + Math.random() * 3 }; say(S, p, '🎣 釣魚中…'); }
   else if (a.kind === 'well') {
     p.water = upgValue(S, 'can');
     addFx(S, WELL.x, WELL.y - 0.6, `💧 裝滿了（${p.water}）`, '#81d4fa', 'water');
@@ -793,42 +1020,90 @@ function stepPlayer(S, p, dt) {
     p.action = null;
     doAction(S, p, a);
   }
+  if (p.fishing && !p.path.length && (p.fishing.t -= dt) <= 0) finishFishing(S, p);
 }
 
 function stepPlots(S, dt) {
-  const sprinkler = upgValue(S, 'sprinkler') > 0, soil = upgValue(S, 'soil');
-  for (const pl of S.plots) {
-    if (pl.wet > 0) pl.wet = Math.max(0, pl.wet - dt);
-    if (!pl.crop || pl.dead || pl.g >= 1) continue;
-    if (sprinkler || pl.wet > 0) {
-      pl.g = Math.min(1, pl.g + dt * soil / CROPS[pl.crop].grow);
+  const w = weatherOf(S), wetAll = upgValue(S, 'sprinkler') > 0 || w.rain, soil = upgValue(S, 'soil');
+  S.plots.forEach((pl, i) => {
+    if (pl.wet > 0) pl.wet = Math.max(0, pl.wet - dt * (w.dry || 1));
+    if (!pl.crop || pl.dead || pl.g >= 1) return;
+    // 第 3 天起偶爾會長蟲，有蟲就不會長
+    if (!pl.bug && S.day >= 3 && Math.random() < dt / 1500) pl.bug = true;
+    if (wetAll || pl.wet > 0) {
+      if (!pl.bug) pl.g = Math.min(1, pl.g + dt * soil / CROPS[pl.crop].grow);
       pl.dry = 0;
-    } else if ((pl.dry += dt) > WITHER_TIME) {
-      pl.dead = true;
-      S.stats.withered++;
-      addFx(S, pl.x, pl.y - 0.4, '枯萎了…', '#ef9a9a', 'bad');
+      if (pl.g >= 1 && pl.crop === 'pumpkin' && Math.random() < 0.15) {
+        pl.giant = true;
+        addFx(S, pl.x, pl.y - 0.6, '🎃 長出巨無霸南瓜了！', '#ffca28', 'up');
+      }
+    } else {
+      pl.perfect = false;
+      if ((pl.dry += dt) > WITHER_TIME) {
+        pl.dead = true;
+        S.stats.withered++;
+        addFx(S, pl.x, pl.y - 0.4, '枯萎了…', '#ef9a9a', 'bad');
+      }
     }
+  });
+}
+
+// 暴風雨：下午 3 點會打壞還在田裡的作物（溫室裡的沒事），成熟的更容易壞
+function stepStorm(S) {
+  if (!weatherOf(S).storm || S.stormDone || gameHour(S.t) < STORM_HOUR) return;
+  S.stormDone = true;
+  let lost = 0;
+  S.plots.forEach((pl, i) => {
+    if (!pl.crop || pl.dead || isGreenhouse(S, i)) return;
+    if (Math.random() < (pl.g >= 1 ? 0.5 : 0.25)) { pl.dead = true; pl.giant = false; lost++; }
+  });
+  S.stats.stormLoss += lost;
+  S.banner = { text: `⛈️ 暴風雨來了！打壞了 ${lost} 株作物`, ttl: 4 };
+  addFx(S, 5, 6, '', null, 'bad');
+}
+
+// 烏鴉：停在一株作物上，8 秒內沒人趕走就把它吃掉
+function stepCrow(S, dt) {
+  if (!S.crow && S.crowAt != null && gameHour(S.t) >= S.crowAt) {
+    const targets = S.plots.map((pl, i) => i).filter(i => S.plots[i].crop && !S.plots[i].dead && plotOpen(S, i));
+    if (!targets.length) { S.crowAt += 0.5; return; }
+    S.crowAt = null;
+    const i = pick(targets);
+    S.crow = { i, t: 0 };
+    addFx(S, S.plots[i].x, S.plots[i].y - 0.8, '🐦 烏鴉來了！快點那塊田', '#ef9a9a', 'bad');
+  }
+  const crow = S.crow;
+  if (!crow) return;
+  const pl = S.plots[crow.i];
+  if (!pl.crop || pl.dead) { S.crow = null; return; }
+  if ((crow.t += dt / 8) >= 1) {
+    pl.dead = true;
+    pl.giant = false;
+    S.stats.crowLoss++;
+    S.crow = null;
+    addFx(S, pl.x, pl.y - 0.6, '🐦 作物被吃掉了…', '#ef5350', 'bad');
   }
 }
 
-// 隨機挑客人想買的東西：只會挑已經解鎖的，當季熱門的機率比較高
-function pickWanted(S, exclude) {
-  const hot = SEASON_HOT[seasonOf(S.day)];
-  const pool = ITEM_KEYS.filter(k => sellable(S, k) && !exclude.has(k));
+// 隨機挑客人想買的東西：只會挑現在拿得到的，當季熱門的機率比較高，節慶時更明顯
+function pickWanted(S, exclude, noGold) {
+  const hot = SEASON_HOT[seasonOf(S.day)], fest = isFestival(S.day);
+  const pool = ITEM_KEYS.filter(k => sellable(S, k) && !exclude.has(k) && !(noGold && GOLD[k]));
   if (!pool.length) return null;
-  const weight = k => (hot.includes(k) ? 3 : 1) * (PRODUCTS[k] ? 1.2 : 1);
+  const weight = k => (hot.includes(k) ? (fest ? 6 : 3) : 1) * (PRODUCTS[k] ? 1.2 : 1) * (GOLD[k] ? 0.5 : 1);
   let r = Math.random() * pool.reduce((s, k) => s + weight(k), 0);
   for (const k of pool) if ((r -= weight(k)) <= 0) return k;
   return pool[pool.length - 1];
 }
 
 function pickCustomerType(S) {
-  const canGourmet = PRODUCT_KEYS.some(k => sellable(S, k));
+  const fancy = ITEM_KEYS.some(k => (PRODUCTS[k] || GOLD[k]) && sellable(S, k));
   const w = {
     normal: CUSTOMER_TYPES.normal.weight,
     hurry: CUSTOMER_TYPES.hurry.weight,
     big: CUSTOMER_TYPES.big.weight * (0.5 + S.rating * 0.3),     // 評價越高越多大戶
-    gourmet: canGourmet ? CUSTOMER_TYPES.gourmet.weight * (0.5 + S.rating * 0.2) : 0,
+    gourmet: fancy ? CUSTOMER_TYPES.gourmet.weight * (0.5 + S.rating * 0.2) : 0,
+    star: S.day >= 3 ? CUSTOMER_TYPES.star.weight * (S.rating >= 3 ? 1 : 0.3) : 0,
   };
   let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
   for (const k in w) if ((r -= w[k]) <= 0) return k;
@@ -839,8 +1114,8 @@ function spawnCustomer(S) {
   const type = pickCustomerType(S), def = CUSTOMER_TYPES[type];
   const want = {};
   if (type === 'gourmet') {
-    // 美食家只買加工品
-    const pool = PRODUCT_KEYS.filter(k => sellable(S, k));
+    // 美食家只買加工品和金星作物
+    const pool = ITEM_KEYS.filter(k => (PRODUCTS[k] || GOLD[k]) && sellable(S, k));
     want[pick(pool)] = 1;
     if (pool.length > 1 && Math.random() < 0.4) want[pick(pool)] = 1;
   } else {
@@ -850,7 +1125,7 @@ function spawnCustomer(S) {
     const extra = type === 'big' ? 2 : Math.random() < 0.35 ? 1 : 0;
     for (let i = 0; i < extra; i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
     for (const k of kinds) {
-      const n = PRODUCTS[k] ? 1 : Math.random() < 0.4 ? 2 : 1;
+      const n = PRODUCTS[k] || GOLD[k] ? 1 : Math.random() < 0.4 ? 2 : 1;
       want[k] = type === 'big' ? n + randInt(1, 2) : n;
     }
   }
@@ -861,6 +1136,7 @@ function spawnCustomer(S) {
     id: S.nextId++, type, x: DOOR[0], y: STREET_Y, wp: [[DOOR[0], DOOR[1]]],
     want, patience, maxPatience: patience, state: 'enter', face: pick(def.faces || FACES), qi: -1,
   });
+  if (type === 'star') S.banner = { text: '🌟 名人來店了！服務得好評價會大漲', ttl: 3.5 };
 }
 
 function checkGoals(S) {
@@ -889,21 +1165,23 @@ function stepAnimals(S, dt) {
   }
 }
 
-// 小偷：從門口溜到收銀台旁，待 10 秒就偷走一筆錢跑掉；被點到就抓住
+// 小偷：從門口溜到收銀台旁，待 10 秒就偷走一筆錢跑掉；被點到就抓住；有看門狗的話會被嚇跑
 function stepThief(S, dt) {
-  const hour = gameHour(S.t);
-  if (!S.thief && S.thiefAt != null && hour >= S.thiefAt) {
+  if (!S.thief && S.thiefAt != null && gameHour(S.t) >= S.thiefAt) {
     S.thiefAt = null;
     S.thief = { x: DOOR[0], y: STREET_Y, wp: [[DOOR[0], DOOR[1]], THIEF_SPOT], state: 'enter', t: 0 };
-    S.banner = { text: '⚠️ 有小偷溜進店裡了！快點他抓起來', ttl: 4 };
+    S.banner = { text: S.owned.dog ? '⚠️ 有小偷！看門狗衝過去了' : '⚠️ 有小偷溜進店裡了！快點他抓起來', ttl: 4 };
     addFx(S, DOOR[0], DOOR[1], '', null, 'bad');
   }
   const th = S.thief;
   if (!th) return;
+  if (S.owned.dog && th.state !== 'flee' && moveToward(S.dog, th.x, th.y + 0.6, 5 * dt)) {
+    thiefFlee(th, false);
+    S.stats.thief = 'dog';
+    addFx(S, th.x, th.y - 0.7, '🐕 汪汪！小偷被嚇跑了', '#ffca28', 'order');
+  }
   if (th.wp.length) {
-    const [tx, ty] = th.wp[0], dx = tx - th.x, dy = ty - th.y, d = Math.hypot(dx, dy), m = (th.state === 'flee' ? 4 : 2.2) * dt;
-    if (d <= m) { th.x = tx; th.y = ty; th.wp.shift(); }
-    else { th.x += dx / d * m; th.y += dy / d * m; }
+    if (moveToward(th, th.wp[0][0], th.wp[0][1], (th.state === 'flee' ? 4 : 2.2) * dt)) th.wp.shift();
     if (!th.wp.length && th.state === 'enter') th.state = 'steal';
     if (!th.wp.length && th.state === 'flee') S.thief = null;
     return;
@@ -913,21 +1191,30 @@ function stepThief(S, dt) {
     S.money -= amount;
     S.stats.thief = 'stolen';
     S.stats.stolen += amount;
-    th.state = 'flee';
-    th.wp = [[DOOR[0], DOOR[1]], [DOOR[0], STREET_Y + 1.5]];
+    thiefFlee(th, false);
     addFx(S, th.x, th.y - 0.7, `被偷走 $${amount}！`, '#ef5350', 'bad');
+  }
+}
+
+// 寵物：狗沒事就在店門口晃，貓在客人區散步
+function stepPets(S, dt) {
+  if (S.owned.dog && (!S.thief || S.thief.state === 'flee')) moveToward(S.dog, 24 + Math.sin(S.t / 6) * 2, 14.5, 1.5 * dt);
+  const cat = S.cat;
+  if (S.owned.cat && moveToward(cat, cat.tx, cat.ty, 0.8 * dt)) {
+    cat.tx = 15 + Math.random() * 13;
+    cat.ty = 9 + Math.random() * 3;
   }
 }
 
 function stepMachines(S, dt) {
   MACHINES.forEach((def, i) => {
     const m = S.machines[i], prod = PRODUCTS[def.product];
-    if (m.input < prod.need) { m.p = 0; return; }
+    if (m.input <= 0) { m.p = 0; return; }
     if (m.out >= MACHINE_OUT) return;          // 成品放滿就先停
     m.p += dt * upgValue(S, 'machine') / prod.time;
     if (m.p >= 1) {
       m.p = 0;
-      m.input -= prod.need;
+      m.input--;
       m.out++;
       addFx(S, def.x - 1, def.y - 0.3, `${prod.emoji} 做好了`, '#ffe082', 'ding');
     }
@@ -942,8 +1229,9 @@ function stepCustomers(S, dt) {
     if (S.spawnT <= 0 && active < QUEUE.length) {
       spawnCustomer(S);
       const rush = hour >= 11 && hour < 13 ? 0.5 : 1;   // 中午尖峰
-      // 價格越低、評價越高、有大招牌，客人來得越頻繁
-      S.spawnT = (6 + Math.random() * 7) * rush * priceLevel(S).spawn * (1.4 - 0.15 * S.rating) * decorBonus(S).spawn;
+      // 價格越低、評價越高、有大招牌、節慶、好天氣，客人來得越頻繁
+      S.spawnT = (6 + Math.random() * 7) * rush * priceLevel(S).spawn * (1.4 - 0.15 * S.rating)
+        * decorBonus(S).spawn * weatherOf(S).spawn * (isFestival(S.day) ? 0.55 : 1);
     }
   }
   let qi = 0;
@@ -955,24 +1243,26 @@ function stepCustomers(S, dt) {
         c.face = '😠';
         sendAway(c);
         S.stats.angry++;
-        changeRating(S, -0.15 * (c.type === 'gourmet' ? 1.6 : 1));
-        addFx(S, c.x, c.y - 0.7, '等太久了！', '#ef5350', 'bad');
+        changeRating(S, -0.15 * (CUSTOMER_TYPES[c.type] || CUSTOMER_TYPES.normal).angry);
+        addFx(S, c.x, c.y - 0.7, c.type === 'star' ? '名人生氣離開了…' : '等太久了！', '#ef5350', 'bad');
       }
     }
     const target = c.wp.length ? c.wp[0] : c.state !== 'leave' ? QUEUE[c.qi] : null;
-    if (target) {
-      const dx = target[0] - c.x, dy = target[1] - c.y, d = Math.hypot(dx, dy), m = CUSTOMER_SPEED * dt;
-      if (d <= m) {
-        c.x = target[0]; c.y = target[1];
-        if (c.wp.length) c.wp.shift();
-        else if (c.state === 'enter') c.state = 'wait';
-      } else {
-        c.x += dx / d * m; c.y += dy / d * m;
-      }
+    if (target && moveToward(c, target[0], target[1], CUSTOMER_SPEED * dt)) {
+      if (c.wp.length) c.wp.shift();
+      else if (c.state === 'enter') c.state = 'wait';
     }
     if (c.state === 'leave' && !c.wp.length) c.gone = true;
   }
   S.customers = S.customers.filter(c => !c.gone);
+}
+
+function morningBanner(S) {
+  const season = SEASONS[seasonOf(S.day)];
+  const parts = [weatherLabel(S, S.weather)];
+  if (isFestival(S.day)) parts.unshift(`${season.festIcon} 今天是${season.festival}！客人特別多`);
+  if (weatherOf(S).storm) parts.push(`下午 ${STORM_HOUR - 12} 點有暴風雨，成熟的快收`);
+  S.banner = { text: parts.join('　'), ttl: 5 };
 }
 
 // 從準備畫面開始遊戲
@@ -980,7 +1270,8 @@ function startGame(S) {
   S.phase = 'play';
   if (!S.order) S.order = newOrder(S);
   if (S.stats.ratingStart == null) S.stats.ratingStart = S.rating;
-  rollThief(S);
+  rollEvents(S);
+  morningBanner(S);
 }
 
 // 一天結束：停下來進結算畫面，等所有人按「準備好了」才進到隔天
@@ -990,11 +1281,14 @@ function endDay(S) {
   S.customers = [];
   S.thief = null;
   S.thiefAt = null;
+  S.crow = null;
+  S.crowAt = null;
   S.fx = [];
   S.banner = null;
+  S.weatherNext = rollWeather(S);
   if (S.order && !S.order.done) { S.order.failed = true; S.stats.order = 'failed'; changeRating(S, -0.2); }
   addFx(S, REGISTER.x, REGISTER.y, '', null, 'night');
-  for (const p of Object.values(S.players)) { p.ready = false; p.path = []; p.action = null; }
+  for (const p of Object.values(S.players)) { p.ready = false; p.path = []; p.action = null; p.fishing = null; }
 }
 
 function startNextDay(S) {
@@ -1004,18 +1298,23 @@ function startNextDay(S) {
   S.spawnT = 3;
   S.stats = newStats();
   S.stats.ratingStart = S.rating;
+  S.weather = S.weatherNext || 'cloudy';
   S.order = newOrder(S);
-  for (const pl of S.plots) pl.wet = 0;     // 過一晚土就乾了
-  for (const a of Object.values(S.animals)) a.fed = 0;   // 動物每天早上要重新餵
-  rollThief(S);
-  // 每天早上付幫手工資；錢不夠他就放假一天
-  if (S.worker) {
-    S.worker.off = S.money < WORKER.wage;
-    if (!S.worker.off) { S.money -= WORKER.wage; S.stats.wage = WORKER.wage; }
-    Object.assign(S.worker, { path: [], action: null });
-    [S.worker.x, S.worker.y] = WORKER.spawn;
+  S.combo = { n: 0, until: 0 };
+  for (const pl of S.plots) { pl.wet = 0; pl.lift = {}; }      // 過一晚土就乾了
+  for (const a of Object.values(S.animals)) a.fed = 0;          // 動物每天早上要重新餵
+  rollEvents(S);
+  // 每天早上付幫手工資；錢不夠那天就放假
+  for (const kind of HELPER_KEYS) {
+    const h = S.helpers[kind];
+    if (!h) continue;
+    h.off = S.money < HELPERS[kind].wage;
+    if (!h.off) { S.money -= HELPERS[kind].wage; S.stats.wage += HELPERS[kind].wage; }
+    Object.assign(h, { path: [], action: null });
+    [h.x, h.y] = HELPERS[kind].spawn;
   }
   for (const p of Object.values(S.players)) p.ready = false;
+  morningBanner(S);
 }
 
 function step(S, dt) {
@@ -1024,12 +1323,15 @@ function step(S, dt) {
   S.t += dt;
   if (S.t >= DAY_LEN) return endDay(S);
   stepPlots(S, dt);
+  stepStorm(S);
+  stepCrow(S, dt);
   stepMachines(S, dt);
   stepAnimals(S, dt);
-  stepWorker(S, dt);
+  stepHelpers(S, dt);
   for (const id in S.players) stepPlayer(S, S.players[id], dt);
   stepCustomers(S, dt);
   stepThief(S, dt);
+  stepPets(S, dt);
   checkGoals(S);
   for (const p of Object.values(S.players)) if (p.chat && (p.chat.ttl -= dt) <= 0) p.chat = null;
   for (const f of S.fx) f.ttl -= dt;
