@@ -120,6 +120,10 @@ html, body {
 .stock-item .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stock-item .ct { font-weight: bold; color: var(--accent); }
 .stock-empty { color: var(--muted); font-size: 13px; }
+.stock-item.empty { border: 1px solid #c62828; }
+.stock-item.empty .ct { color: #ff5252; }
+.stock-item.empty .em { opacity: 0.55; }
+.stock-item.low .ct { color: #ffb74d; }
 .machine-row { padding: 7px 10px; background: var(--panel-2); border-radius: 8px; font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
 .machine-row .top { display: flex; justify-content: space-between; gap: 8px; }
 .machine-row .rc { font-size: 13px; color: var(--muted); }

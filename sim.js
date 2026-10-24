@@ -92,21 +92,30 @@ const SEASON_HOT = [
   ['juice', 'bread', 'carrot', 'fishfry'],
 ];
 
-// 加工機：每台做一種商品，最多排 MACHINE_QUEUE 份、放 MACHINE_OUT 個成品。全部放在店的後場
+// 加工機：每台做一種商品，最多排 MACHINE_QUEUE 份、放 MACHINE_OUT 個成品。全部放在店的後場，照用到的原料分區
+// （陣列順序跟存檔對應，不能改；要換位置只改 x、y）
 const MACHINES = [
+  // 蔬果加工：沿著上面的牆
   { product: 'ketchup', name: '醬料鍋', icon: '🍲', x: 23, y: 3 },
   { product: 'juice', name: '果汁機', icon: '🥤', x: 24, y: 3 },
   { product: 'jam', name: '果醬鍋', icon: '🫙', x: 25, y: 3 },
   { product: 'soup', name: '湯鍋', icon: '♨️', x: 26, y: 3 },
-  { product: 'flour', name: '磨粉機', icon: '🌀', x: 27, y: 3 },
-  { product: 'bread', name: '烤箱', icon: '🔥', x: 28, y: 3 },
-  { product: 'cheese', name: '起司桶', icon: '⚗️', x: 29, y: 4 },
-  { product: 'roast', name: '烤肉架', icon: '🍳', x: 29, y: 5 },
-  { product: 'fishfry', name: '炸鍋', icon: '🫕', x: 29, y: 6 },
-  // 中間的廚房中島：做多種原料的料理
-  { product: 'burger', name: '漢堡台', icon: '🍔', x: 18, y: 5 },
-  { product: 'cake', name: '蛋糕台', icon: '🎂', x: 19, y: 5 },
+  // 烘焙區：中間的中島，麵粉做好就近給旁邊的機器用
+  { product: 'flour', name: '磨粉機', icon: '🌀', x: 17, y: 5 },
+  { product: 'bread', name: '烤箱', icon: '🔥', x: 18, y: 5 },
+  // 乳品、肉、魚：右上角
+  { product: 'cheese', name: '起司桶', icon: '⚗️', x: 27, y: 3 },
+  { product: 'roast', name: '烤肉架', icon: '🍳', x: 28, y: 3 },
+  { product: 'fishfry', name: '炸鍋', icon: '🫕', x: 29, y: 4 },
+  { product: 'burger', name: '漢堡台', icon: '🍔', x: 19, y: 5 },
+  { product: 'cake', name: '蛋糕台', icon: '🎂', x: 21, y: 5 },
   { product: 'pizza', name: '披薩窯', icon: '🍕', x: 20, y: 5 },
+];
+// 分區名稱，畫在地板上
+const MACHINE_ZONES = [
+  { text: '🍞 烘焙區', x: 19, y: 4.15 },
+  { text: '🥫 蔬果加工', x: 24.5, y: 2.45 },
+  { text: '🧀 乳品・肉・魚', x: 28, y: 2.45 },
 ];
 const MACHINE_QUEUE = 3, MACHINE_OUT = 4;
 
@@ -303,6 +312,15 @@ function obtainable(S, k, need = 1) {
   const mi = machineIndex(k);
   if (mi >= 0 && S.machines[mi].input > 0) return true;
   return Object.entries(PRODUCTS[k].inputs).every(([i, n]) => obtainable(S, i, n));
+}
+
+// 貨架和庫存面板要列出來的東西：現在做得出來或拿得到的全部（包括麵粉、生肉這些原料），少的排前面
+function shelfItems(S) {
+  const relevant = k => S.shelves[k] > 0
+    || (CROPS[k] && S.unlocked[k])
+    || (GOODS[k] && (k === 'fish' ? S.unlocked.fishfry || S.fishCaught > 0 : S.animals[GOODS[k].animal].count > 0))
+    || (PRODUCTS[k] && S.unlocked[k]);
+  return ITEM_KEYS.filter(relevant).sort((a, b) => S.shelves[a] - S.shelves[b]);
 }
 
 // 客人會直接買、而且現在拿得到的東西（中間材料像麵粉、生肉、生魚不算）

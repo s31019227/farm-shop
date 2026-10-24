@@ -262,22 +262,27 @@ function drawPets(g, S, time) {
 }
 
 function drawShopObjects(g, S, time) {
-  // 共用貨架：每一格放兩種有貨的東西，放不下就在最後一格顯示還有幾種
-  const stocked = ITEM_KEYS.filter(k => S.shelves[k] > 0);
+  // 共用貨架：最少的排前面（沒貨的紅色、快沒的橘色），一格放兩種，放不下的（都是比較多的）在最後一格算數量
+  const items = shelfItems(S);
   const slots = SHELF_TILES.length * 2;
   SHELF_TILES.forEach(([sx, sy], i) => {
     const x = sx * TILE, y = sy * TILE;
     roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 3, '#8d6e63');
     for (let j = 0; j < 2; j++) {
-      const n = i * 2 + j, k = stocked[n];
+      const n = i * 2 + j, k = items[n];
       if (!k) continue;
       const iy = y + 8 + j * 15;
-      if (n === slots - 1 && stocked.length > slots) { label(g, `+${stocked.length - slots + 1}`, x + TILE / 2, iy, 9, '#fff'); continue; }
+      if (n === slots - 1 && items.length > slots) { label(g, `+${items.length - slots + 1}`, x + TILE / 2, iy, 9, '#fff'); continue; }
+      const count = S.shelves[k];
+      if (!count) g.globalAlpha = 0.55;
       emoji(g, ITEMS[k].emoji, x + 9, iy, 11);
-      label(g, String(S.shelves[k] === Infinity ? '∞' : S.shelves[k]), x + 23, iy, 9, '#fff');
+      g.globalAlpha = 1;
+      label(g, String(count), x + 23, iy, 9, count === 0 ? '#ff5252' : count < 3 ? '#ffb74d' : '#fff');
     }
   });
-  if (!stocked.length) label(g, '貨架是空的', (SHELF_TILES[2][0] + 0.5) * TILE, (SHELF_TILES[2][1] + 0.5) * TILE, 9, '#fff');
+
+  // 加工機分區的名稱
+  for (const z of MACHINE_ZONES) label(g, z.text, z.x * TILE, z.y * TILE, 8, 'rgba(255,255,255,0.9)', 'rgba(62,39,35,0.55)');
 
   MACHINES.forEach((def, i) => {
     const m = S.machines[i], prod = PRODUCTS[def.product], x = def.x * TILE, y = def.y * TILE;

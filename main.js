@@ -159,7 +159,7 @@
     const list = $('stock-list');
     list.innerHTML = '';
     for (const [title, test] of STOCK_GROUPS) {
-      const keys = ITEM_KEYS.filter(k => test(k) && S.shelves[k] > 0);
+      const keys = shelfItems(S).filter(test);   // 少的排前面，沒貨的也列出來
       if (!keys.length) continue;
       const group = document.createElement('div');
       group.className = 'stock-group';
@@ -173,6 +173,8 @@
         el.querySelector('.nm').textContent = it.name + (it.noDemand ? '（要加工）' : '');
         el.title = it.noDemand ? `${it.name}不能直接賣，要拿去加工` : `${it.name}，每個 $${priceOf(S, k)}`;
         el.querySelector('.ct').textContent = S.shelves[k];
+        el.classList.toggle('empty', S.shelves[k] === 0);
+        el.classList.toggle('low', S.shelves[k] > 0 && S.shelves[k] < 3);
         group.lastChild.appendChild(el);
       }
       list.appendChild(group);
