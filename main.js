@@ -146,7 +146,6 @@
   // ---------- 庫存面板 ----------
   const STOCK_GROUPS = [
     ['🌱 作物', k => CROPS[k]],
-    ['🌟 金星作物', k => GOLD[k]],
     ['🐮 牧場、池塘', k => GOODS[k]],
     ['🍳 加工品、料理', k => PRODUCTS[k]],
   ];
@@ -194,10 +193,8 @@
       rc.textContent = '一份要：';
       for (const [k, n] of Object.entries(prod.inputs)) {
         const span = document.createElement('span');
-        // 作物的話金星品也能用，一起算
-        const gold = CROPS[k] ? S.shelves[goldOf(k)] : 0, onShelf = S.shelves[k] + gold;
-        span.className = onShelf >= n ? 'have' : 'miss';
-        span.textContent = `${ITEMS[k].emoji}${ITEMS[k].name}×${n}（架上 ${onShelf}${gold ? `，含金星 ${gold}` : ''}） `;
+        span.className = S.shelves[k] >= n ? 'have' : 'miss';
+        span.textContent = `${ITEMS[k].emoji}${ITEMS[k].name}×${n}（架上 ${S.shelves[k]}） `;
         rc.appendChild(span);
       }
       row.querySelector('.bar i').style.width = `${Math.round(m.p * 100)}%`;
@@ -394,7 +391,7 @@
   const TUTORIAL = [
     { text: '👋 先在左邊的農地點一下，種下番茄', done: S => S.plots.some(p => p.crop) },
     { text: '💧 作物要有水才會長：到 💧 井打水，再點正在長的作物（種的時候有水會順便澆）', done: S => S.plots.some(p => p.crop && (p.wet > 0 || p.g > 0.3)) },
-    { text: '🍅 等作物成熟（會上下晃）再點一下收成', done: S => Object.values(S.players).some(p => CROP_KEYS.some(k => p.carry[k] || p.carry[goldOf(k)])) || ITEM_KEYS.some(k => S.shelves[k] > 0) },
+    { text: '🍅 等作物成熟（會上下晃）再點一下收成', done: S => Object.values(S.players).some(p => CROP_KEYS.some(k => p.carry[k])) || ITEM_KEYS.some(k => S.shelves[k] > 0) },
     { text: '🏪 從店的側門走進後場，點貨架把東西放上去', done: S => ITEM_KEYS.some(k => S.shelves[k] > 0) },
     { text: '💰 客人走到櫃台時，點 💰 幫他結帳。之後可以打開右下角 📋 管理看升級和目標！', done: S => S.served > 0 },
   ];
@@ -480,7 +477,7 @@
       ['小偷', st.thief === 'caught' ? '抓到了！+$30' : st.thief === 'dog' ? '被看門狗嚇跑了 🐕' : st.thief === 'stolen' ? `被偷走 $${st.stolen}` : '沒來', st.thief === 'stolen' ? 'neg' : ''],
       ...(st.stormLoss ? [['暴風雨打壞', `${st.stormLoss} 株`, 'neg']] : []),
       ...(st.crowLoss ? [['被烏鴉吃掉', `${st.crowLoss} 株`, 'neg']] : []),
-      ...(st.gold ? [['🌟 金星作物', `${st.gold} 個`]] : []),
+      ...(st.bumper ? [['🌟 豐收（產量翻倍）', `${st.bumper} 次`]] : []),
       ...(st.giants ? [['🎃 巨無霸南瓜', `${st.giants} 顆`]] : []),
       ...(st.fish ? [['🐟 釣到的魚', `${st.fish} 條`]] : []),
       ...(st.maxCombo >= 2 ? [['最高結帳連擊', `×${st.maxCombo}`]] : []),
@@ -763,6 +760,16 @@
     store(() => localStorage.setItem(SAVE_KEY, JSON.stringify(data)));
   }
 
+  // 存檔裡的物品數量放回目前的物品表；舊版的金星作物（g_xxx）換回普通作物，已經不存在的東西就丟掉
+  function mergeItems(saved) {
+    const items = zeroItems();
+    for (const [k, n] of Object.entries(saved || {})) {
+      const key = k.startsWith('g_') ? k.slice(2) : k;
+      if (key in items && typeof n === 'number') items[key] += n;
+    }
+    return items;
+  }
+
   function loadSave() {
     const d = readSave();
     if (!d) return null;
@@ -773,7 +780,7 @@
       plots: s.plots.map((pl, i) => ({ ...pl, ...(d.plots && d.plots[i]), lift: {} })),
       upg: { ...s.upg, ...d.upg },
       unlocked: { ...s.unlocked, ...d.unlocked },
-      shelves: { ...s.shelves, ...d.shelves },
+      shelves: mergeItems(d.shelves),
       // 舊存檔的加工機記的是原料個數，換算成排了幾份
       machines: s.machines.map((m, i) => {
         const o = d.machines && d.machines[i];
@@ -799,9 +806,9 @@
     const savedHelpers = d.helpers || { farmer: d.worker || null };
     for (const k of HELPER_KEYS) {
       const h = savedHelpers[k];
-      s.helpers[k] = h ? Object.assign(newHelper(k), { off: h.off, carry: { ...zeroItems(), ...h.carry } }) : null;
+      s.helpers[k] = h ? Object.assign(newHelper(k), { off: h.off, carry: mergeItems(h.carry) }) : null;
     }
-    if (d.stats) s.stats = { ...newStats(), ...d.stats, sold: { ...s.stats.sold, ...d.stats.sold } };
+    if (d.stats) s.stats = { ...newStats(), ...d.stats, sold: mergeItems(d.stats.sold) };
     // 存檔時已經在結算畫面的話，下次直接從隔天開始
     if (s.t >= DAY_LEN) { s.day++; s.t = 0; s.stats = newStats(); s.order = null; s.weather = s.weatherNext; }
     return s;

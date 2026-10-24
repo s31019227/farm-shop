@@ -274,7 +274,6 @@ function drawShopObjects(g, S, time) {
       const iy = y + 8 + j * 15;
       if (n === slots - 1 && stocked.length > slots) { label(g, `+${stocked.length - slots + 1}`, x + TILE / 2, iy, 9, '#fff'); continue; }
       emoji(g, ITEMS[k].emoji, x + 9, iy, 11);
-      if (ITEMS[k].gold) emoji(g, '⭐', x + 14, iy - 5, 7);
       label(g, String(S.shelves[k] === Infinity ? '∞' : S.shelves[k]), x + 23, iy, 9, '#fff');
     }
   });

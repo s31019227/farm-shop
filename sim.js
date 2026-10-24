@@ -39,11 +39,6 @@ const CROPS = {
 };
 const CROP_KEYS = Object.keys(CROPS);
 
-// 金星作物：一直有水才有機會長出來，賣兩倍價，不能拿去加工
-const GOLD = Object.fromEntries(CROP_KEYS.map(k => ['g_' + k, {
-  name: '金星' + CROPS[k].name, emoji: CROPS[k].emoji, price: CROPS[k].price * 2, gold: true, base: k,
-}]));
-const goldOf = crop => 'g_' + crop;
 
 // 動物：餵飽之後每 interval 秒（一隻的情況）產出一個 good；每種能養幾隻看「牧場擴建」升級
 const ANIMALS = {
@@ -83,7 +78,7 @@ const PRODUCTS = {
   pizza: { name: '披薩', emoji: '🍕', price: 210, inputs: { flour: 1, cheese: 1, ketchup: 1 }, time: 22 },
 };
 const PRODUCT_KEYS = Object.keys(PRODUCTS);
-const ITEMS = { ...CROPS, ...GOLD, ...GOODS, ...PRODUCTS };      // 所有能拿、能上架、能賣的東西
+const ITEMS = { ...CROPS, ...GOODS, ...PRODUCTS };      // 所有能拿、能上架、能賣的東西
 const ITEM_KEYS = Object.keys(ITEMS);
 const zeroItems = () => Object.fromEntries(ITEM_KEYS.map(k => [k, 0]));
 const recipeText = k => Object.entries(PRODUCTS[k].inputs).map(([i, n]) => ITEMS[i].emoji + (n > 1 ? '×' + n : '')).join('+');
@@ -273,7 +268,7 @@ const seasonOf = day => Math.floor((day - 1) / SEASON_LEN) % SEASONS.length;
 const isFestival = day => (day - 1) % SEASON_LEN + 1 === FESTIVAL_DAY;
 const inSeason = (S, crop) => CROPS[crop].seasons.includes(seasonOf(S.day));
 const machineIndex = product => MACHINES.findIndex(m => m.product === product);
-const itemList = (items, sep = ' ') => ITEM_KEYS.filter(k => items[k]).map(k => (ITEMS[k].gold ? '🌟' : '') + ITEMS[k].emoji + items[k]).join(sep);
+const itemList = (items, sep = ' ') => ITEM_KEYS.filter(k => items[k]).map(k => ITEMS[k].emoji + items[k]).join(sep);
 const plotOpen = (S, i) => PLOT_DEFS[i].lv <= S.upg.land;
 const isGreenhouse = (S, i) => !!S.owned.greenhouse && PLOT_DEFS[i].y === GREENHOUSE_Y;
 const weatherOf = S => WEATHERS[S.weather] || WEATHERS.cloudy;
@@ -294,16 +289,12 @@ function stockOf(S, k) {
   return n;
 }
 
-// 加工時能用的數量：作物連同金星作物一起算（金星的也能拿去加工）
-const usableStock = (S, k) => stockOf(S, k) + (CROPS[k] ? stockOf(S, goldOf(k)) : 0);
-
 // 現在拿得到 need 個的東西：
 // 存貨夠就算；作物要「這一季能種」或「田裡正在長」（溫室只看有沒有真的種下去）；
 // 加工品要「機器正在做」或「每種原料都拿得到一份的量」（麵包 → 麵粉 → 小麥 會一路往回查）；
-// 動物產品要有養那種動物；金星作物只有存貨才算
+// 動物產品要有養那種動物
 function obtainable(S, k, need = 1) {
-  if (usableStock(S, k) >= need) return true;
-  if (GOLD[k]) return false;
+  if (stockOf(S, k) >= need) return true;
   if (k === 'fish') return true;
   if (GOODS[k]) return S.animals[GOODS[k].animal].count > 0;
   if (!S.unlocked[k]) return false;
@@ -372,7 +363,7 @@ function newStats() {
   return {
     income: 0, served: 0, angry: 0, seedSpent: 0, upgradeSpent: 0, sold: zeroItems(), withered: 0,
     order: null, orderReward: 0, goals: [], ratingStart: null, thief: null, stolen: 0, wage: 0,
-    stormLoss: 0, crowLoss: 0, gold: 0, maxCombo: 0, giants: 0, fish: 0,
+    stormLoss: 0, crowLoss: 0, bumper: 0, maxCombo: 0, giants: 0, fish: 0,
   };
 }
 
@@ -767,9 +758,9 @@ function sendAway(c) {
 
 // ---------- 特殊訂單 ----------
 function newOrder(S) {
-  // 跟客人一樣隨機挑，當季熱門的比較容易被選到（金星作物不會進訂單）
+  // 跟客人一樣隨機挑，當季熱門的比較容易被選到
   const kinds = new Set();
-  for (let i = 0; i < (S.day >= 6 ? 3 : 2); i++) { const k = pickWanted(S, kinds, true); if (k) kinds.add(k); }
+  for (let i = 0; i < (S.day >= 6 ? 3 : 2); i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
   const need = {};
   let value = 0;
   for (const k of kinds) {
@@ -860,12 +851,12 @@ function tapPlot(S, p, i) {
     const room = carryCap(S) - carryTotal(p.carry);
     if (room <= 0) return say(S, p, '拿不下了');
     const c = CROPS[pl.crop];
-    // 從頭到尾都沒缺過水，就有機會長出金星作物；肥料等級越高機會越大
-    const gold = pl.perfect && Math.random() < 0.2 + 0.08 * S.upg.soil;
-    const item = gold ? goldOf(pl.crop) : pl.crop, n = Math.min(room, c.yield);
-    p.carry[item] += n;
-    if (gold) S.stats.gold += n;
-    addFx(S, pl.x, pl.y - 0.4, gold ? `🌟金星${c.name} +${n}！` : `+${n}${c.emoji}`, gold ? '#ffca28' : '#c5e1a5', gold ? 'up' : 'harvest');
+    // 從頭到尾都沒缺過水，就有機會豐收、產量翻倍；肥料等級越高機會越大
+    const bumper = pl.perfect && Math.random() < 0.2 + 0.08 * S.upg.soil;
+    const n = Math.min(room, c.yield * (bumper ? 2 : 1));
+    p.carry[pl.crop] += n;
+    if (bumper) S.stats.bumper++;
+    addFx(S, pl.x, pl.y - 0.4, bumper ? `🌟豐收！${c.emoji}×${n}` : `+${n}${c.emoji}`, bumper ? '#ffca28' : '#c5e1a5', bumper ? 'up' : 'harvest');
     clearPlot(pl);
   } else if (pl.wet > 0 || upgValue(S, 'sprinkler') || weatherOf(S).rain) {
     say(S, p, `長大中 ${Math.floor(pl.g * 100)}%`);
@@ -902,22 +893,12 @@ function tapMachine(S, p, a) {
     return addFx(S, a.x, a.y - 0.6, `+${take}${prod.emoji}`, '#c5e1a5', 'harvest');
   }
   if (m.input >= MACHINE_QUEUE) return say(S, p, `${def.name}排滿了`);
-  // 每種原料可以從這些地方拿：貨架上的普通品 → 身上的普通品 → 貨架上的金星品 → 身上的金星品
-  const sources = k => {
-    const list = [[S.shelves, k], [p.carry, k]];
-    if (CROPS[k]) list.push([S.shelves, goldOf(k)], [p.carry, goldOf(k)]);
-    return list;
-  };
-  const have = k => sources(k).reduce((n, [box, key]) => n + box[key], 0);
-  const missing = Object.entries(prod.inputs).filter(([k, n]) => have(k) < n);
+  const missing = Object.entries(prod.inputs).filter(([k, n]) => S.shelves[k] + p.carry[k] < n);
   if (missing.length) return say(S, p, '架上不夠：' + missing.map(([k, n]) => `${ITEMS[k].name}×${n}`).join('、'));
   for (const [k, n] of Object.entries(prod.inputs)) {
-    let left = n;
-    for (const [box, key] of sources(k)) {
-      const take = Math.min(left, box[key]);
-      box[key] -= take;
-      left -= take;
-    }
+    const fromShelf = Math.min(n, S.shelves[k]);
+    S.shelves[k] -= fromShelf;
+    p.carry[k] -= n - fromShelf;
   }
   m.input++;
   addFx(S, a.x - 1, a.y - 0.3, `${recipeText(def.product)} → ${prod.emoji}`, '#c5e1a5', 'plant');
@@ -1101,18 +1082,18 @@ function stepCrow(S, dt) {
 }
 
 // 隨機挑客人想買的東西：只會挑現在拿得到的，當季熱門的機率比較高，節慶時更明顯
-function pickWanted(S, exclude, noGold) {
+function pickWanted(S, exclude) {
   const hot = SEASON_HOT[seasonOf(S.day)], fest = isFestival(S.day);
-  const pool = ITEM_KEYS.filter(k => sellable(S, k) && !exclude.has(k) && !(noGold && GOLD[k]));
+  const pool = ITEM_KEYS.filter(k => sellable(S, k) && !exclude.has(k));
   if (!pool.length) return null;
-  const weight = k => (hot.includes(k) ? (fest ? 6 : 3) : 1) * (PRODUCTS[k] ? 1.2 : 1) * (GOLD[k] ? 0.5 : 1);
+  const weight = k => (hot.includes(k) ? (fest ? 6 : 3) : 1) * (PRODUCTS[k] ? 1.2 : 1);
   let r = Math.random() * pool.reduce((s, k) => s + weight(k), 0);
   for (const k of pool) if ((r -= weight(k)) <= 0) return k;
   return pool[pool.length - 1];
 }
 
 function pickCustomerType(S) {
-  const fancy = ITEM_KEYS.some(k => (PRODUCTS[k] || GOLD[k]) && sellable(S, k));
+  const fancy = PRODUCT_KEYS.some(k => sellable(S, k));
   const w = {
     normal: CUSTOMER_TYPES.normal.weight,
     hurry: CUSTOMER_TYPES.hurry.weight,
@@ -1129,8 +1110,8 @@ function spawnCustomer(S) {
   const type = pickCustomerType(S), def = CUSTOMER_TYPES[type];
   const want = {};
   if (type === 'gourmet') {
-    // 美食家只買加工品和金星作物
-    const pool = ITEM_KEYS.filter(k => (PRODUCTS[k] || GOLD[k]) && sellable(S, k));
+    // 美食家只買加工品
+    const pool = PRODUCT_KEYS.filter(k => sellable(S, k));
     want[pick(pool)] = 1;
     if (pool.length > 1 && Math.random() < 0.4) want[pick(pool)] = 1;
   } else {
@@ -1140,7 +1121,7 @@ function spawnCustomer(S) {
     const extra = type === 'big' ? 2 : Math.random() < 0.35 ? 1 : 0;
     for (let i = 0; i < extra; i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
     for (const k of kinds) {
-      const n = PRODUCTS[k] || GOLD[k] ? 1 : Math.random() < 0.4 ? 2 : 1;
+      const n = PRODUCTS[k] ? 1 : Math.random() < 0.4 ? 2 : 1;
       want[k] = type === 'big' ? n + randInt(1, 2) : n;
     }
   }
