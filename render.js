@@ -296,7 +296,7 @@ function drawShopObjects(g, S, time) {
       return;
     }
     roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 4, m.out ? '#8d9f5a' : '#78909c');
-    const working = m.input > 0 && m.out < MACHINE_OUT;
+    const working = m.input > 0 && m.out < outCap(def.product);
     emoji(g, prod.emoji, x + TILE / 2 + 2, y + 13 + (working ? Math.sin(time * 20) * 0.8 : 0), 17);
     if (def.icon !== prod.emoji) emoji(g, def.icon, x + 7, y + 7, 9);
     g.fillStyle = 'rgba(0,0,0,0.45)';

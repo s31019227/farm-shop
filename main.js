@@ -119,6 +119,46 @@
     else if (conn && conn.open) conn.send(msg);
   }
 
+  // ---------- 點上面的季節、節慶、天氣顯示說明 ----------
+  const WEATHER_INFO = {
+    cloudy: '普通的一天，沒有特別的影響。',
+    sunny: '客人比較多（約多 15%），但<b>土乾得比較快</b>，記得多澆水。',
+    rain: '<b>不用澆水</b>，所有作物都算有水；客人比較少（約少 20%）。冬天是下雪，效果一樣。',
+    storm: `下午 ${STORM_HOUR - 12} 點會<b>打壞田裡的作物</b>：成熟的有一半機率壞掉、還沒熟的四分之一。<b>溫室裡的沒事</b>，成熟的最好在那之前收完。客人很少。`,
+  };
+  const emojis = keys => keys.map(k => ITEMS[k].emoji + ITEMS[k].name).join('、');
+
+  function infoHtml(kind) {
+    const si = seasonOf(S.day), season = SEASONS[si];
+    const nextFest = FESTIVAL_DAY - ((S.day - 1) % SEASON_LEN + 1);
+    if (kind === 'season') {
+      const fast = CROP_KEYS.filter(k => CROPS[k].seasons.includes(si));
+      const left = SEASON_LEN - (S.day - 1) % SEASON_LEN;
+      return `<p><b>${season.icon} ${season.name}天</b>（這季還剩 ${left} 天，含今天）</p>`
+        + `<p>⚡ 當季長得快 1.6 倍：${emojis(fast)}</p>`
+        + `<p>🔥 這季客人特別愛買：${emojis(SEASON_HOT[si])}</p>`
+        + `<p>🎉 ${season.festival}：${nextFest > 0 ? `${nextFest} 天後` : nextFest === 0 ? '就是今天！' : '這季已經過了'}</p>`;
+    }
+    if (kind === 'festival') {
+      return `<p><b>${season.festIcon} 今天是${season.festival}！</b></p>`
+        + '<p>客人差不多<b>多一倍</b>，<b>小費 ×1.5</b>。</p>'
+        + `<p>這季的熱門商品（${emojis(SEASON_HOT[si])}）今天特別搶手，先多備點貨。</p>`;
+    }
+    return `<p><b>今天：${weatherLabel(S, S.weather)}</b></p><p>${WEATHER_INFO[S.weather] || ''}</p>`
+      + `<p>明天的天氣要等今天結束，在結算畫面才看得到。</p>`;
+  }
+
+  for (const b of $$('.hud-chip')) b.onclick = () => {
+    if (!S) return;
+    $('info-text').innerHTML = infoHtml(b.dataset.info);
+    $('info-card').classList.remove('hidden');
+  };
+  $('info-close').onclick = () => $('info-card').classList.add('hidden');
+  // 點畫面其他地方也會關掉
+  document.addEventListener('pointerdown', e => {
+    if (!$('info-card').contains(e.target) && !e.target.closest('.hud-chip')) $('info-card').classList.add('hidden');
+  }, true);
+
   // ---------- 遊玩教學 ----------
   for (const b of $$('.btn-guide')) b.onclick = () => $('guide').classList.remove('hidden');
   $('btn-guide-close').onclick = () => $('guide').classList.add('hidden');
@@ -194,7 +234,7 @@
       const m = S.machines[i], prod = PRODUCTS[def.product], row = document.createElement('div');
       row.className = 'machine-row' + (m.out ? ' ready' : '');
       row.innerHTML = '<div class="top"><span></span><span></span></div><div class="rc"></div><div class="bar"><i></i></div>';
-      row.querySelector('.top span').textContent = `${def.icon} ${def.name} → ${prod.emoji} ${prod.name}`;
+      row.querySelector('.top span').textContent = `${def.icon} ${def.name} → ${prod.emoji} ${prod.name}${makesOf(def.product) > 1 ? ` ×${makesOf(def.product)}` : ''}`;
       row.querySelector('.top span:last-child').textContent = m.out ? `✅ 做好 ${m.out} 個` : m.input ? `製作中（排 ${m.input} 份）` : '閒置';
       const rc = row.querySelector('.rc');
       rc.textContent = '一份要：';
@@ -938,8 +978,13 @@
     const h = gameHour(S.t), hh = Math.floor(h), mm = Math.floor((h - hh) * 6) * 10;
     const status = h < OPEN_HOUR ? '（準備中）' : h >= CLOSE_HOUR ? '（打烊）' : '';
     const season = SEASONS[seasonOf(S.day)];
-    const fest = isFestival(S.day) ? `${season.festIcon}${season.festival} ` : '';
-    setText('hud-day', `${season.icon}${season.name}・第 ${S.day} 天 ${pad(hh)}:${pad(mm)}${status}　${fest}${weatherLabel(S, S.weather)}`);
+    setText('hud-season', `${season.icon}${season.name}`);
+    setText('hud-time', `第 ${S.day} 天 ${pad(hh)}:${pad(mm)}${status}`);
+    const fest = $('hud-fest');
+    fest.classList.toggle('hidden', !isFestival(S.day));
+    fest.classList.add('fest');
+    setText(fest, `${season.festIcon}${season.festival}`);
+    setText('hud-weather', weatherLabel(S, S.weather));
     // 錢的數字會滾動到新的值，增加變綠、減少變紅
     if (shownMoney === null) shownMoney = S.money;
     const moneyEl = $('hud-money');

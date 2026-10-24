@@ -43,6 +43,27 @@ html, body {
 }
 
 #hud b { color: var(--accent); letter-spacing: 2px; }
+#hud-day { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hud-chip { padding: 1px 8px; font-size: 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
+.hud-chip.fest { background: #6a1b9a; border-color: #ab47bc; }
+#info-card {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(420px, calc(100% - 24px));
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  line-height: 1.6;
+}
+#info-text b { color: var(--accent); }
+#info-text p { margin: 0 0 6px; }
+#info-close { margin-top: 6px; width: 100%; }
 
 #stage {
   flex: 1;

@@ -62,13 +62,14 @@ const GOODS = {
   fish: { name: '鮮魚', emoji: '🐟', price: 0, noDemand: true },
 };
 
-// 店裡加工出來的商品：inputs 是一份要用的原料，time 秒做好一個。noDemand = 客人不會直接買（中間材料）
+// 店裡加工出來的商品：inputs 是一份要用的原料，time 秒做好一份，一份做出 makes 個（沒寫就是 1 個）
+// noDemand = 客人不會直接買（中間材料）
 const PRODUCTS = {
   ketchup: { name: '番茄醬', emoji: '🥫', price: 35, inputs: { tomato: 2 }, time: 12 },
   juice: { name: '紅蘿蔔汁', emoji: '🧃', price: 50, inputs: { carrot: 2 }, time: 15 },
   jam: { name: '草莓果醬', emoji: '🍯', price: 70, inputs: { strawberry: 2 }, time: 18 },
   soup: { name: '玉米濃湯', emoji: '🥣', price: 80, inputs: { corn: 2 }, time: 20 },
-  flour: { name: '麵粉', emoji: '🧂', price: 30, inputs: { wheat: 3 }, time: 10, noDemand: true },
+  flour: { name: '麵粉', emoji: '🧂', price: 30, inputs: { wheat: 2 }, time: 10, makes: 3, noDemand: true },
   bread: { name: '麵包', emoji: '🍞', price: 75, inputs: { flour: 1 }, time: 20 },
   cheese: { name: '起司', emoji: '🧀', price: 70, inputs: { milk: 2 }, time: 22 },
   roast: { name: '烤豬排', emoji: '🍖', price: 75, inputs: { pork: 1 }, time: 16 },
@@ -82,7 +83,9 @@ const PRODUCT_KEYS = Object.keys(PRODUCTS);
 const ITEMS = { ...CROPS, ...GOODS, ...PRODUCTS };      // 所有能拿、能上架、能賣的東西
 const ITEM_KEYS = Object.keys(ITEMS);
 const zeroItems = () => Object.fromEntries(ITEM_KEYS.map(k => [k, 0]));
-const recipeText = k => Object.entries(PRODUCTS[k].inputs).map(([i, n]) => ITEMS[i].emoji + (n > 1 ? '×' + n : '')).join('+');
+const makesOf = k => PRODUCTS[k].makes || 1;
+const recipeText = k => Object.entries(PRODUCTS[k].inputs).map(([i, n]) => ITEMS[i].emoji + (n > 1 ? '×' + n : '')).join('+')
+  + (makesOf(k) > 1 ? ` → ${PRODUCTS[k].emoji}×${makesOf(k)}` : '');
 
 // 每一季客人特別愛買的東西（需求變 3 倍），都是那一季種得出來的
 const SEASON_HOT = [
@@ -118,6 +121,7 @@ const MACHINE_ZONES = [
   { text: '🧀 乳品・肉・魚', x: 28, y: 2.45 },
 ];
 const MACHINE_QUEUE = 3, MACHINE_OUT = 4;
+const outCap = product => MACHINE_OUT * makesOf(product);   // 一份做很多個的機器，成品也放得比較多
 
 // 一開始就有的作物和機器；其他要花錢解鎖（requires = 要先解鎖或先養的東西，可以是動物）
 const START_UNLOCKED = ['tomato', 'carrot', 'ketchup', 'juice'];
@@ -920,7 +924,7 @@ function tapMachine(S, p, a) {
     p.carry[k] -= n - fromShelf;
   }
   m.input++;
-  addFx(S, a.x - 1, a.y - 0.3, `${recipeText(def.product)} → ${prod.emoji}`, '#c5e1a5', 'plant');
+  addFx(S, a.x - 1, a.y - 0.3, makesOf(def.product) > 1 ? recipeText(def.product) : `${recipeText(def.product)} → ${prod.emoji}`, '#c5e1a5', 'plant');
 }
 
 function tapRegister(S, p) {
@@ -1227,13 +1231,13 @@ function stepMachines(S, dt) {
   MACHINES.forEach((def, i) => {
     const m = S.machines[i], prod = PRODUCTS[def.product];
     if (m.input <= 0) { m.p = 0; return; }
-    if (m.out >= MACHINE_OUT) return;          // 成品放滿就先停
+    if (m.out >= outCap(def.product)) return;          // 成品放滿就先停
     m.p += dt * upgValue(S, 'machine') / prod.time;
     if (m.p >= 1) {
       m.p = 0;
       m.input--;
-      m.out++;
-      addFx(S, def.x - 1, def.y - 0.3, `${prod.emoji} 做好了`, '#ffe082', 'ding');
+      m.out += makesOf(def.product);
+      addFx(S, def.x - 1, def.y - 0.3, `${prod.emoji}×${makesOf(def.product)} 做好了`, '#ffe082', 'ding');
     }
   });
 }
