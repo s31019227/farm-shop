@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1e2a1e">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="農場小店">
+<title>農場小店</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <span id="hud-day">第 1 天 06:00</span>
+    <span id="hud-money">💰 $50</span>
+    <span id="hud-rating">⭐3.0</span>
+    <span id="hud-carry">🎒 空</span>
+    <span id="hud-order"></span>
+    <span id="hud-room" class="hidden">房間 <b class="room-code"></b> <button class="btn-copy">複製邀請連結</button></span>
+    <span id="hud-net" class="net"></span>
+    <button id="btn-mute" title="音效開關">🔊</button>
+  </header>
+  <main id="stage"><canvas id="game"></canvas></main>
+  <footer id="bar">
+    <div id="seeds" class="group"></div>
+    <div class="bar-right">
+      <button id="btn-chat" title="快捷聊天">💬</button>
+      <button id="btn-upg-toggle">📋 管理</button>
+    </div>
+    <!-- 面板或聊天選單打開時蓋住整個畫面，點任何空白處就收起來 -->
+    <div id="backdrop" class="hidden"></div>
+    <div id="chat-menu" class="popover hidden"></div>
+    <!-- 從底下彈出來的管理面板：價格、升級、目標 -->
+    <div id="upg-sheet">
+      <div class="sheet-head"><b>📋 管理</b><button id="btn-upg-close">收起 ▼</button></div>
+      <h4>💲 全店價格</h4>
+      <div id="price" class="seg"></div>
+      <p id="price-desc" class="sheet-note"></p>
+      <h4>⬆️ 升級</h4>
+      <div id="upgrades" class="col"></div>
+      <h4>🏆 目標</h4>
+      <ul id="goals"></ul>
+      <div id="hint">種菜（記得去 💧 井打水）→ 收成上架 → 點加工機加工 → 點 💰 結帳。點隊友可以把身上的東西交給他。📋 訂單板交貨換獎金；解鎖和裝潢在每天的結算畫面。</div>
+    </div>
+  </footer>
+</div>
+
+<div id="lobby" class="overlay">
+  <div class="card">
+    <h1>🌾 農場 × 小店 🏪</h1>
+    <p class="sub">多人即時合作雛型（最多 4 人）</p>
+    <button id="btn-host" class="primary">建立房間</button>
+    <!-- 有存檔時，建立房間前先問要接續還是開新的 -->
+    <div id="host-choice" class="col hidden">
+      <p id="save-info" class="sub"></p>
+      <button id="btn-continue" class="primary">接續上次的農場</button>
+      <button id="btn-newfarm">開新農場（舊存檔會被蓋掉）</button>
+      <button id="btn-choice-back" class="link">返回</button>
+    </div>
+    <div id="join-area">
+      <div class="or">或</div>
+      <div class="join">
+        <input id="in-code" maxlength="4" placeholder="房間代碼" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="btn-join">加入</button>
+      </div>
+    </div>
+    <p id="lobby-msg" class="msg"></p>
+    <button id="btn-install" class="hidden">📲 安裝到主畫面</button>
+    <p id="install-tip" class="tip hidden">iPhone：在 Safari 按下方「分享」→「加入主畫面」，就能像 App 一樣全螢幕玩</p>
+    <div class="save-tools">
+      <button id="btn-export" class="link">匯出存檔</button>
+      <button id="btn-import" class="link">匯入存檔</button>
+      <input id="in-import" type="file" accept=".json,application/json" hidden>
+    </div>
+  </div>
+</div>
+
+<div id="ready" class="overlay hidden">
+  <div class="card">
+    <h2>準備中</h2>
+    <p class="code">房間代碼 <b class="room-code"></b> <button class="btn-copy">複製邀請連結</button></p>
+    <p id="ready-save" class="sub"></p>
+    <ul id="ready-list" class="plist"></ul>
+    <div class="me">
+      <label>你的名字 <input id="me-name" maxlength="8" autocomplete="off" spellcheck="false"></label>
+      <div id="me-colors"></div>
+    </div>
+    <button id="btn-ready" class="primary">準備好了</button>
+    <button id="btn-start" class="primary start hidden">開始遊戲</button>
+    <p id="ready-msg" class="msg"></p>
+  </div>
+</div>
+
+<div id="summary" class="overlay hidden">
+  <div class="card">
+    <h2 id="sum-title">第 1 天結算</h2>
+    <table id="sum-table"></table>
+    <p id="sum-season" class="season-note"></p>
+    <h3>趁現在升級</h3>
+    <div id="sum-upgrades" class="col"></div>
+    <h3>解鎖新作物和機器</h3>
+    <div id="sum-unlocks" class="col"></div>
+    <h3>店面裝潢</h3>
+    <div id="sum-decor" class="col"></div>
+    <ul id="sum-list" class="plist"></ul>
+    <button id="btn-next" class="primary">準備好了，開始下一天</button>
+    <p id="sum-msg" class="msg"></p>
+  </div>
+</div>
+
+<div id="lost" class="overlay hidden">
+  <div class="card">
+    <h2>📡 房主斷線了</h2>
+    <p class="sub">遊戲先暫停。房主重新打開遊戲、按「接續上次的農場」之後，這裡會自動接回去，不用重新加入。</p>
+    <p id="lost-msg" class="msg">正在等房主回來…</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="sim.js"></script>
+<script src="render.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
