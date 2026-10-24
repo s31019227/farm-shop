@@ -147,6 +147,10 @@
     b.onclick = () => { sendInput({ t: 'chat', i }); setPopup(null); };
     chatMenu.appendChild(b);
   });
+  $('btn-worker').onclick = () => {
+    if (S.worker && !confirm('確定要解雇幫手嗎？他身上的東西會放回貨架')) return;
+    sendInput({ t: 'worker', v: !S.worker });
+  };
   PRICE_LEVELS.forEach((lv, i) => {
     const b = document.createElement('button');
     b.textContent = lv.name;
@@ -160,6 +164,9 @@
     for (const b of $('price').children) b.classList.toggle('active', +b.dataset.price === S.priceLv);
     const lv = priceLevel(S);
     setText('price-desc', `售價 ×${lv.mult}　` + (lv.mult < 1 ? '客人變多、評價漲得快' : lv.mult > 1 ? '客人變少、比較沒耐心、評價漲得慢' : '標準價格'));
+    const wb = $('btn-worker');
+    setText(wb, S.worker ? '解雇幫手' + (S.worker.off ? '（今天放假）' : '') : `👨‍🌾 雇用幫手 $${WORKER.hireCost}`);
+    wb.disabled = !S.worker && S.money < WORKER.hireCost;
     const sig = JSON.stringify(S.goals) + S.day;
     if (sig === goalSig) return;
     goalSig = sig;
@@ -309,6 +316,7 @@
       ['特殊訂單', st.order === 'done' ? `完成 +$${st.orderReward}` : st.order === 'failed' ? '沒完成' : '—', st.order === 'failed' ? 'neg' : ''],
       ['枯萎的作物', `${st.withered} 株`, st.withered ? 'neg' : ''],
       ['小偷', st.thief === 'caught' ? '抓到了！+$30' : st.thief === 'stolen' ? `被偷走 $${st.stolen}` : '沒來', st.thief === 'stolen' ? 'neg' : ''],
+      ...(S.worker ? [['幫手工資', S.worker.off ? '今天放假（錢不夠）' : `-$${st.wage}`, 'neg']] : []),
       ['種子、飼料花費', `-$${st.seedSpent}`, 'neg'],
       ['升級、解鎖花費', `-$${st.upgradeSpent}`, 'neg'],
       ['今日淨賺', `${net < 0 ? '-' : ''}$${Math.abs(net)}`],
@@ -356,9 +364,9 @@
     for (const k of ANIMAL_KEYS) {
       const def = ANIMALS[k], a = S.animals[k], good = ITEMS[def.good], b = document.createElement('button');
       const what = `${def.emoji} ${def.name}（產${good.emoji}${good.name}）`;
-      b.textContent = a.count >= ANIMAL_MAX ? `${what} 已養 ${a.count} 隻（滿了）`
+      b.textContent = a.count >= animalMax(S) ? `${what} 已養 ${a.count} 隻（滿了）`
         : `${what}${a.count ? ` 已養 ${a.count} 隻，再買一隻` : ''} → $${animalCost(S, k)}`;
-      b.disabled = a.count >= ANIMAL_MAX || S.money < animalCost(S, k);
+      b.disabled = a.count >= animalMax(S) || S.money < animalCost(S, k);
       b.onclick = () => sendInput({ t: 'animal', k });
       animals.appendChild(b);
     }
@@ -422,7 +430,9 @@
     for (const b of $$('[data-upg]')) {
       const u = UPGRADES[b.dataset.upg], lv = S.upg[b.dataset.upg];
       const maxed = lv >= u.costs.length;
-      const level = u.labels ? u.labels[lv] : `Lv${lv + 1}`;
+      const v = u.values[lv];
+      const shown = u.show ? `（${v === Infinity ? '無限' : v}${u.unit || ''}）` : '';
+      const level = u.labels ? u.labels[lv] : `Lv${lv + 1}${shown}`;
       setText(b, `${u.icon} ${u.name} ${level}` + (maxed ? (u.labels ? '' : '（滿級）') : ` → 升級 $${u.costs[lv]}`));
       b.disabled = maxed || S.money < u.costs[lv];
       if (!b.disabled) affordable = true;
@@ -551,7 +561,7 @@
       stats: S.stats, upg: S.upg, plots: S.plots, shelves: S.shelves, machines: S.machines,
       unlocked: S.unlocked, order: S.order,
       rating: S.rating, priceLv: S.priceLv, decor: S.decor, goals: S.goals, ordersDone: S.ordersDone, fxSeq: S.fxSeq,
-      animals: S.animals, thievesCaught: S.thievesCaught,
+      animals: S.animals, thievesCaught: S.thievesCaught, worker: S.worker ? { off: S.worker.off, carry: S.worker.carry } : null,
     };
     store(() => localStorage.setItem(SAVE_KEY, JSON.stringify(data)));
   }
@@ -577,6 +587,7 @@
       fxSeq: d.fxSeq || 0,
       animals: Object.fromEntries(ANIMAL_KEYS.map(k => [k, { ...s.animals[k], ...(d.animals && d.animals[k]) }])),
       thievesCaught: d.thievesCaught || 0,
+      worker: d.worker ? Object.assign(newWorker(), { off: d.worker.off, carry: { ...zeroItems(), ...d.worker.carry } }) : null,
     });
     if (d.stats) s.stats = { ...newStats(), ...d.stats, sold: { ...s.stats.sold, ...d.stats.sold } };
     // 存檔時已經在結算畫面的話，下次直接從隔天開始
@@ -665,6 +676,7 @@
     for (const p of Object.values(s.players)) pos['p' + p.id] = [p.x, p.y];
     for (const c of s.customers) pos['c' + c.id] = [c.x, c.y];
     if (s.thief) pos.thief = [s.thief.x, s.thief.y];
+    if (s.worker) pos.worker = [s.worker.x, s.worker.y];
     snaps.push({ at: performance.now(), pos });
     while (snaps.length > 20) snaps.shift();
     reconcile();

@@ -279,11 +279,13 @@ function drawAnimals(g, S, time) {
       emoji(g, '🔒', x0 + w / 2 + 12, y0 + h / 2 - 14, 11);
       continue;
     }
+    // 最多 5 隻：分成三排，各自左右晃
+    const size = a.count > 3 ? 18 : 22;
     for (let i = 0; i < a.count; i++) {
       const s = i * 2.3 + def.x;
-      const ax = x0 + w / 2 + Math.sin(time * 0.6 + s) * (w / 2 - 14);
-      const ay = y0 + h / 2 + (i ? 14 : -10) + Math.sin(time * 0.9 + s * 1.7) * 6;
-      emoji(g, def.emoji, ax, ay, 22);
+      const ax = x0 + w / 2 + Math.sin(time * 0.6 + s) * (w / 2 - 12);
+      const ay = y0 + 26 + (i % 3) * 24 + Math.sin(time * 0.9 + s * 1.7) * 4;
+      emoji(g, def.emoji, ax, ay, size);
     }
     const good = ITEMS[def.good];
     if (a.ready) label(g, `${good.emoji}${a.ready}`, x0 + w / 2, y0 + 8, 11, '#ffe082', 'rgba(0,0,0,0.6)');
@@ -298,6 +300,22 @@ function drawAnimals(g, S, time) {
       g.fillRect(x0 + 8, y0 + 4, (w - 16) * a.prog, 4);
     }
   }
+}
+
+// 雇來的幫手：咖啡色的圓，戴草帽
+function drawWorker(g, w, x, y, time) {
+  const cx = (x + 0.5) * TILE, cy = (y + 0.5) * TILE;
+  g.globalAlpha = w.off ? 0.45 : 1;
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.beginPath(); g.ellipse(cx, cy + 11, 10, 3.5, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx, cy, 11, 0, Math.PI * 2);
+  g.fillStyle = w.color; g.fill();
+  g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+  emoji(g, '👒', cx, cy - 4, 14);
+  label(g, w.off ? '幫手（放假）' : '幫手', cx, cy - 19, 10, '#fff', 'rgba(93,64,55,0.8)');
+  const carry = ITEM_KEYS.filter(k => w.carry[k]).map(k => ITEMS[k].emoji + w.carry[k]).join('');
+  if (carry) label(g, carry, cx, cy + 19, 10, '#fff', 'rgba(0,0,0,0.55)');
+  g.globalAlpha = 1;
 }
 
 function drawThief(g, th, time) {
@@ -394,6 +412,11 @@ function drawGame(g, S, view, meId, disp, tapMark, time) {
     ...S.customers.map(c => ({ e: c, d: disp['c' + c.id] || c, draw: drawCustomer })),
     ...Object.values(S.players).map(p => ({ e: p, d: disp['p' + p.id] || p, draw: (g, e, x, y) => drawPlayer(g, e, x, y, e.id === meId) })),
   ].sort((a, b) => a.d.y - b.d.y);
+  if (S.worker) {
+    const d = disp.worker || S.worker;
+    ents.push({ e: S.worker, d, draw: (g, e, x, y) => drawWorker(g, e, x, y, time) });
+    ents.sort((a, b) => a.d.y - b.d.y);
+  }
   for (const { e, d, draw } of ents) draw(g, e, d.x, d.y);
   if (S.thief) { const d = disp.thief || S.thief; drawThief(g, { ...S.thief, x: d.x, y: d.y }, time); }
 
