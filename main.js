@@ -293,7 +293,7 @@
     const me = S.players[meId];
     if (!me) return;
     const online = onlinePlayers(S), st = S.stats;
-    const sig = JSON.stringify([online.map(p => [p.id, p.name, p.color, p.ready]), S.day, S.money, st, S.unlocked, S.decor]);
+    const sig = JSON.stringify([online.map(p => [p.id, p.name, p.color, p.ready]), S.day, S.money, st, S.unlocked, S.decor, S.animals]);
     if (sig === summarySig) return;
     summarySig = sig;
 
@@ -308,7 +308,8 @@
       ['賣出', sold],
       ['特殊訂單', st.order === 'done' ? `完成 +$${st.orderReward}` : st.order === 'failed' ? '沒完成' : '—', st.order === 'failed' ? 'neg' : ''],
       ['枯萎的作物', `${st.withered} 株`, st.withered ? 'neg' : ''],
-      ['種子花費', `-$${st.seedSpent}`, 'neg'],
+      ['小偷', st.thief === 'caught' ? '抓到了！+$30' : st.thief === 'stolen' ? `被偷走 $${st.stolen}` : '沒來', st.thief === 'stolen' ? 'neg' : ''],
+      ['種子、飼料花費', `-$${st.seedSpent}`, 'neg'],
       ['升級、解鎖花費', `-$${st.upgradeSpent}`, 'neg'],
       ['今日淨賺', `${net < 0 ? '-' : ''}$${Math.abs(net)}`],
       ['商店評價', `⭐${(st.ratingStart ?? S.rating).toFixed(1)} → ⭐${S.rating.toFixed(1)}`, S.rating < (st.ratingStart ?? S.rating) ? 'neg' : ''],
@@ -342,13 +343,25 @@
       if (S.unlocked[k]) continue;
       const u = UNLOCKS[k], it = ITEMS[k], b = document.createElement('button');
       const what = CROPS[k] ? `${it.emoji} ${it.name}（作物）` : `${it.emoji} ${it.name}（${MACHINES[machineIndex(k)].name}）`;
-      const blocked = u.requires && !S.unlocked[u.requires];
-      b.textContent = blocked ? `${what} — 要先解鎖${ITEMS[u.requires].name}` : `${what} → 解鎖 $${u.cost}`;
+      const blocked = u.requires && !owns(S, u.requires);
+      b.textContent = blocked ? `${what} — 要先${ANIMALS[u.requires] ? '養' : '解鎖'}${nameOf(u.requires)}` : `${what} → 解鎖 $${u.cost}`;
       b.disabled = blocked || S.money < u.cost;
       b.onclick = () => sendInput({ t: 'unlock', k });
       unlocks.appendChild(b);
     }
     if (!unlocks.children.length) unlocks.textContent = '全部都解鎖了！';
+
+    const animals = $('sum-animals');
+    animals.innerHTML = '';
+    for (const k of ANIMAL_KEYS) {
+      const def = ANIMALS[k], a = S.animals[k], good = ITEMS[def.good], b = document.createElement('button');
+      const what = `${def.emoji} ${def.name}（產${good.emoji}${good.name}）`;
+      b.textContent = a.count >= ANIMAL_MAX ? `${what} 已養 ${a.count} 隻（滿了）`
+        : `${what}${a.count ? ` 已養 ${a.count} 隻，再買一隻` : ''} → $${animalCost(S, k)}`;
+      b.disabled = a.count >= ANIMAL_MAX || S.money < animalCost(S, k);
+      b.onclick = () => sendInput({ t: 'animal', k });
+      animals.appendChild(b);
+    }
 
     const decor = $('sum-decor');
     decor.innerHTML = '';
@@ -538,6 +551,7 @@
       stats: S.stats, upg: S.upg, plots: S.plots, shelves: S.shelves, machines: S.machines,
       unlocked: S.unlocked, order: S.order,
       rating: S.rating, priceLv: S.priceLv, decor: S.decor, goals: S.goals, ordersDone: S.ordersDone, fxSeq: S.fxSeq,
+      animals: S.animals, thievesCaught: S.thievesCaught,
     };
     store(() => localStorage.setItem(SAVE_KEY, JSON.stringify(data)));
   }
@@ -561,6 +575,8 @@
       goals: d.goals || {},
       ordersDone: d.ordersDone || 0,
       fxSeq: d.fxSeq || 0,
+      animals: Object.fromEntries(ANIMAL_KEYS.map(k => [k, { ...s.animals[k], ...(d.animals && d.animals[k]) }])),
+      thievesCaught: d.thievesCaught || 0,
     });
     if (d.stats) s.stats = { ...newStats(), ...d.stats, sold: { ...s.stats.sold, ...d.stats.sold } };
     // 存檔時已經在結算畫面的話，下次直接從隔天開始
@@ -625,7 +641,7 @@
     const st = $('stage'), aw = st.clientWidth, ah = st.clientHeight;
     const fit = Math.min(aw / COLS, ah / ROWS);
     // 螢幕太小（例如直式手機）時放大格子填滿高度，改成鏡頭跟著自己走
-    const tilePx = fit >= 26 ? fit : Math.max(26, Math.min(ah / ROWS, 40));
+    const tilePx = fit >= 20 ? fit : Math.max(26, Math.min(ah / ROWS, 40));
     const cw = Math.min(aw, Math.floor(COLS * tilePx)), ch = Math.min(ah, Math.floor(ROWS * tilePx));
     const dpr = Math.min(2, window.devicePixelRatio || 1);   // 3 倍螢幕畫起來太吃力，2 倍就夠清楚
     if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
@@ -648,6 +664,7 @@
     const pos = {};
     for (const p of Object.values(s.players)) pos['p' + p.id] = [p.x, p.y];
     for (const c of s.customers) pos['c' + c.id] = [c.x, c.y];
+    if (s.thief) pos.thief = [s.thief.x, s.thief.y];
     snaps.push({ at: performance.now(), pos });
     while (snaps.length > 20) snaps.shift();
     reconcile();
@@ -715,7 +732,7 @@
     if (!me) return;
     const items = itemList(me.carry);
     const water = upgValue(S, 'sprinkler') ? '' : `　💧${me.water}/${upgValue(S, 'can')}`;
-    setText('hud-carry', `🎒 ${items || '空'}（${carryTotal(me.carry)}/${CARRY_CAP}）${water}`);
+    setText('hud-carry', `🎒 ${items || '空'}（${carryTotal(me.carry)}/${carryCap(S)}）${water}`);
   }
 
   let lastFrame = performance.now();

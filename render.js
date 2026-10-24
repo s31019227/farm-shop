@@ -94,10 +94,21 @@ function buildStatic() {
   g.fillStyle = '#7cb342';
   for (let i = 0; i < 260; i++) g.fillRect(rnd() * W, rnd() * H, 2, 3);
 
-  // 小路
+  // 小路和店門口的街道
   g.fillStyle = '#e6dcc3';
   g.fillRect(10 * TILE, 0, 4 * TILE, H);
-  g.fillRect(10 * TILE, 12 * TILE, W - 10 * TILE, 2 * TILE);
+  g.fillRect(10 * TILE, (SHOP.y1 + 1) * TILE, W - 10 * TILE, H - (SHOP.y1 + 1) * TILE);
+
+  // 牧場：泥地加木頭圍欄，每種動物一欄
+  roundRect(g, PEN.x0 * TILE, PEN.y0 * TILE, (PEN.x1 - PEN.x0 + 2) * TILE, (PEN.y1 - PEN.y0 + 1) * TILE, 6, '#c8a97e');
+  g.strokeStyle = '#6d4c41';
+  g.lineWidth = 3;
+  g.strokeRect(PEN.x0 * TILE + 1.5, PEN.y0 * TILE + 1.5, (PEN.x1 - PEN.x0 + 2) * TILE - 3, (PEN.y1 - PEN.y0 + 1) * TILE - 3);
+  g.lineWidth = 2;
+  for (const k of ANIMAL_KEYS.slice(1)) {
+    const x = ANIMALS[k].x * TILE;
+    g.beginPath(); g.moveTo(x, PEN.y0 * TILE + 3); g.lineTo(x, (PEN.y1 + 1) * TILE - 3); g.stroke();
+  }
 
   // 農地
   roundRect(g, TILE + 4, 2 * TILE + 4, 9 * TILE - 8, 9 * TILE - 8, 10, '#d7b98e');
@@ -112,6 +123,13 @@ function buildStatic() {
   g.fillRect((SHOP.x0 + 1) * TILE, (SHOP.y0 + 1) * TILE, (SHOP.x1 - SHOP.x0 - 1) * TILE, (SHOP.y1 - SHOP.y0) * TILE);
   g.fillStyle = '#e5c993';
   for (let y = (SHOP.y0 + 1) * TILE; y < (SHOP.y1 + 1) * TILE; y += 8) g.fillRect((SHOP.x0 + 1) * TILE, y, (SHOP.x1 - SHOP.x0 - 1) * TILE, 1);
+  // 後場改成磁磚地板，跟客人區分開
+  const bx = (SHOP.x0 + 1) * TILE, by = (SHOP.y0 + 1) * TILE, bw = (SHOP.x1 - SHOP.x0 - 1) * TILE, bh = (COUNTER.y - SHOP.y0 - 1) * TILE;
+  g.fillStyle = '#d7ccc8';
+  g.fillRect(bx, by, bw, bh);
+  g.fillStyle = '#c9bcb7';
+  for (let x = bx; x < bx + bw; x += 16) g.fillRect(x, by, 1, bh);
+  for (let y = by; y < by + bh; y += 16) g.fillRect(bx, y, bw, 1);
   for (let y = SHOP.y0; y <= SHOP.y1; y++) for (let x = SHOP.x0; x <= SHOP.x1; x++) {
     if (!isWall(x, y)) continue;
     g.fillStyle = '#795548';
@@ -141,8 +159,10 @@ function buildStatic() {
 
   // 招牌和樹
   label(g, '🌾 農場', 5.5 * TILE, 1.1 * TILE, 15, '#fff');
+  label(g, '🐮 牧場', 5 * TILE, 15.5 * TILE, 15, '#fff');
   label(g, '🏪 小店', (SHOP.doorX + 0.5) * TILE, 1.1 * TILE, 15, '#fff');
-  for (const [x, y] of [[0, 1], [0, 6], [0, 12], [23, 1], [23, 6], [23, 10], [9, 0], [2, 12], [7, 13]]) {
+  label(g, '後場（員工）', 25.5 * TILE, 7.5 * TILE, 10, 'rgba(0,0,0,0.35)', 'rgba(255,255,255,0.3)');
+  for (const [x, y] of [[0, 1], [0, 6], [0, 10], [31, 1], [31, 5], [31, 9], [9, 0], [0, 15], [9, 15], [31, 13]]) {
     emoji(g, '🌳', (x + 0.5) * TILE, (y + 0.5) * TILE, 24);
   }
   return c;
@@ -212,9 +232,10 @@ function drawShopObjects(g, S, time) {
     g.fillRect(x + 4, y + TILE - 6, TILE - 8, 3);
     g.fillStyle = '#ffca28';
     g.fillRect(x + 4, y + TILE - 6, (TILE - 8) * m.p, 3);
-    // 左邊顯示機器裡的原料和成品數量
-    const info = `${ITEMS[prod.from].emoji}${m.input} ${prod.emoji}${m.out}`;
-    label(g, info, x - 14, y + TILE / 2, 9, m.out ? '#ffe082' : '#fff', 'rgba(0,0,0,0.55)');
+    // 機器裡的原料數→成品數；靠上牆的寫在下面，靠右牆的寫在左邊
+    const info = `${m.input}→${m.out}${m.out ? prod.emoji : ''}`;
+    const below = def.y === SHOP.y0 + 1;
+    label(g, info, below ? x + TILE / 2 : x - 12, below ? y + TILE + 6 : y + TILE / 2, 9, m.out ? '#ffe082' : '#fff', 'rgba(0,0,0,0.55)');
   });
 
   // 買了的裝潢
@@ -222,7 +243,10 @@ function drawShopObjects(g, S, time) {
     if (!S.decor[k]) continue;
     for (const [dx, dy] of DECOR[k].spots) emoji(g, DECOR[k].icon, (dx + 0.5) * TILE, (dy + 0.5) * TILE, 20);
   }
-  if (S.decor.music) label(g, '♪', 20.5 * TILE + Math.sin(time * 3) * 6, 7.6 * TILE - (time * 10 % 10), 11, '#fff');
+  if (S.decor.music) {
+    const [mx, my] = DECOR.music.spots[0];
+    label(g, '♪', (mx + 0.5) * TILE + Math.sin(time * 3) * 6, (my - 0.4) * TILE - (time * 10 % 10), 11, '#fff');
+  }
 
   // 特殊訂單板：有訂單時框會閃
   const bx = BOARD.x * TILE, by = BOARD.y * TILE, o = S.order;
@@ -241,6 +265,52 @@ function drawShopObjects(g, S, time) {
     g.strokeRect(REGISTER.x * TILE + 1, REGISTER.y * TILE + 1, TILE - 2, TILE - 2);
   }
   emoji(g, '💰', rx, ry, 16);
+}
+
+// 牧場：動物在自己的欄裡慢慢晃，旁邊顯示產出數量和要不要餵
+function drawAnimals(g, S, time) {
+  for (const k of ANIMAL_KEYS) {
+    const def = ANIMALS[k], a = S.animals[k];
+    const x0 = def.x * TILE, y0 = PEN.y0 * TILE, w = 2 * TILE, h = (PEN.y1 - PEN.y0 + 1) * TILE;
+    if (!a.count) {
+      g.globalAlpha = 0.35;
+      emoji(g, def.emoji, x0 + w / 2, y0 + h / 2 - 4, 22);
+      g.globalAlpha = 1;
+      emoji(g, '🔒', x0 + w / 2 + 12, y0 + h / 2 - 14, 11);
+      continue;
+    }
+    for (let i = 0; i < a.count; i++) {
+      const s = i * 2.3 + def.x;
+      const ax = x0 + w / 2 + Math.sin(time * 0.6 + s) * (w / 2 - 14);
+      const ay = y0 + h / 2 + (i ? 14 : -10) + Math.sin(time * 0.9 + s * 1.7) * 6;
+      emoji(g, def.emoji, ax, ay, 22);
+    }
+    const good = ITEMS[def.good];
+    if (a.ready) label(g, `${good.emoji}${a.ready}`, x0 + w / 2, y0 + 8, 11, '#ffe082', 'rgba(0,0,0,0.6)');
+    else if (a.fed <= 0) {
+      g.globalAlpha = 0.55 + Math.sin(time * 5) * 0.45;
+      label(g, '🍽️ 要餵', x0 + w / 2, y0 + 8, 10, '#fff', 'rgba(198,40,40,0.75)');
+      g.globalAlpha = 1;
+    } else {
+      g.fillStyle = 'rgba(0,0,0,0.45)';
+      g.fillRect(x0 + 8, y0 + 4, w - 16, 4);
+      g.fillStyle = '#ffca28';
+      g.fillRect(x0 + 8, y0 + 4, (w - 16) * a.prog, 4);
+    }
+  }
+}
+
+function drawThief(g, th, time) {
+  const cx = (th.x + 0.5) * TILE, cy = (th.y + 0.5) * TILE;
+  emoji(g, th.caught ? '😵' : '🥷', cx, cy + Math.sin(time * 12) * (th.state === 'flee' ? 2 : 0), 22);
+  if (th.state === 'flee') return;
+  label(g, '小偷！點我', cx, cy - 22, 10, '#fff', 'rgba(198,40,40,0.85)');
+  if (th.state === 'steal') {
+    g.fillStyle = 'rgba(0,0,0,0.5)';
+    g.fillRect(cx - 14, cy + 14, 28, 4);
+    g.fillStyle = '#ef5350';
+    g.fillRect(cx - 14, cy + 14, 28 * th.t, 4);
+  }
 }
 
 function drawCustomer(g, c, x, y) {
@@ -311,6 +381,7 @@ function drawGame(g, S, view, meId, disp, tapMark, time) {
   if (tint) { g.fillStyle = tint; g.fillRect(0, 0, COLS * TILE, ROWS * TILE); }
 
   drawPlots(g, S, time);
+  drawAnimals(g, S, time);
   drawShopObjects(g, S, time);
 
   if (tapMark) {
@@ -324,6 +395,7 @@ function drawGame(g, S, view, meId, disp, tapMark, time) {
     ...Object.values(S.players).map(p => ({ e: p, d: disp['p' + p.id] || p, draw: (g, e, x, y) => drawPlayer(g, e, x, y, e.id === meId) })),
   ].sort((a, b) => a.d.y - b.d.y);
   for (const { e, d, draw } of ents) draw(g, e, d.x, d.y);
+  if (S.thief) { const d = disp.thief || S.thief; drawThief(g, { ...S.thief, x: d.x, y: d.y }, time); }
 
   for (const f of S.fx) {
     if (!f.text) continue;
