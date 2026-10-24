@@ -119,6 +119,11 @@
     else if (conn && conn.open) conn.send(msg);
   }
 
+  // ---------- 遊玩教學 ----------
+  for (const b of $$('.btn-guide')) b.onclick = () => $('guide').classList.remove('hidden');
+  $('btn-guide-close').onclick = () => $('guide').classList.add('hidden');
+  $('guide').addEventListener('click', e => { if (e.target === $('guide')) $('guide').classList.add('hidden'); });
+
   // ---------- 準備畫面 ----------
   $('me-name').addEventListener('input', () => {
     myName = cleanName($('me-name').value);

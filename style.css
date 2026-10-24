@@ -313,4 +313,18 @@ button.start { margin-top: 8px; background: #f9a825; border-color: #fbc02d; colo
 #host-choice .sub { margin: 0 0 4px; }
 #btn-install { width: 100%; margin-bottom: 8px; }
 #lost { z-index: 30; }
+
+/* 遊玩教學 */
+#guide { z-index: 25; }
+.guide-card { max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; text-align: left; }
+.guide-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.guide-head h2 { margin: 0; }
+.guide-card .sub { text-align: left; margin: 8px 0 12px; }
+.guide-card details { background: var(--panel-2); border-radius: 10px; margin-bottom: 8px; padding: 2px 12px; }
+.guide-card summary { cursor: pointer; padding: 9px 0; font-weight: bold; font-size: 15px; }
+.guide-card ul, .guide-card ol { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+.guide-card li { margin-bottom: 4px; }
+.guide-card b { color: var(--accent); }
+.guide-link { width: 100%; margin-bottom: 8px; background: #455a64; border-color: #607d8b; }
+#ready .card { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .hidden { display: none !important; }

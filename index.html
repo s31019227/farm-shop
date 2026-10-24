@@ -65,6 +65,7 @@
       <div id="helpers" class="col"></div>
       <h4>🎩 我的帽子（在結算畫面買新的）</h4>
       <div id="hats" class="group"></div>
+      <button class="btn-guide">📖 遊玩教學</button>
       <h4>🏆 目標</h4>
       <ul id="goals"></ul>
       <div id="hint">種菜（記得去 💧 井打水、抓蟲、趕烏鴉）→ 收成上架 → 點加工機加工 → 點 💰 結帳。點隊友可以交東西給他，點小偷可以抓他，點池塘可以釣魚。巨無霸南瓜要兩個人一起點才搬得動。解鎖、動物、裝潢、設施、帽子在每天的結算畫面買。</div>
@@ -112,6 +113,7 @@
       <label>你的名字 <input id="me-name" maxlength="8" autocomplete="off" spellcheck="false"></label>
       <div id="me-colors"></div>
     </div>
+    <button class="btn-guide guide-link">📖 遊玩教學（第一次玩先看這裡）</button>
     <button id="btn-ready" class="primary">準備好了</button>
     <button id="btn-start" class="primary start hidden">開始遊戲</button>
     <p id="ready-msg" class="msg"></p>
@@ -138,6 +140,100 @@
     <ul id="sum-list" class="plist"></ul>
     <button id="btn-next" class="primary">準備好了，開始下一天</button>
     <p id="sum-msg" class="msg"></p>
+  </div>
+</div>
+
+<!-- 遊玩教學：點標題展開 -->
+<div id="guide" class="overlay hidden">
+  <div class="card guide-card">
+    <div class="guide-head"><h2>📖 遊玩教學</h2><button id="btn-guide-close">關閉 ✕</button></div>
+    <p class="sub">大家一起經營一座農場和一間小店：種菜、養動物、加工，再賣給上門的客人。點下面的標題展開。</p>
+
+    <details open>
+      <summary>👆 基本操作</summary>
+      <ul>
+        <li><b>點哪裡，角色就走過去</b>，到了自動做那一格的事（種菜、收成、上架、結帳…）。</li>
+        <li>點 <b>隊友</b>：把身上的東西交給他。</li>
+        <li>右下角：<b>🗄️ 庫存</b> 看貨架和加工機、<b>💬</b> 快捷聊天、<b>📋 管理</b> 看價格、升級、幫手、目標。</li>
+        <li>左下角的種子按鈕選要種什麼，前面有 ⚡ 的是當季（長得快）。</li>
+        <li>一天大約 4 分鐘，晚上 10 點結束，進到結算畫面。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🔄 一天的流程</summary>
+      <ol>
+        <li>在 <b>🌾 農場</b> 點空地種菜（要花種子錢）。</li>
+        <li>到 <b>💧 井</b> 打水，點正在長的作物澆水。種的時候有水會自動澆。</li>
+        <li>作物成熟（會上下晃）再點一下收成。</li>
+        <li>從側門走進 <b>店的後場</b>，點貨架把身上的東西全部上架。</li>
+        <li>客人會走到櫃台前，點 <b>💰</b> 幫他結帳，架上要有他要的東西。</li>
+      </ol>
+    </details>
+
+    <details>
+      <summary>🌱 農場</summary>
+      <ul>
+        <li>作物要 <b>有水才會長</b>，缺水會閃 💧，乾太久會枯萎（🥀，點一下清掉）。</li>
+        <li>所有作物四季都能種，<b>當季的長得快 1.6 倍</b>。溫室那排什麼都算當季。</li>
+        <li>從種到收都沒缺過水（成熟時閃 ✨），有機會 <b>🌟 豐收，產量翻倍</b>。肥料升級會提高機率。</li>
+        <li>🐛 長蟲：作物停止生長，點一下抓掉。</li>
+        <li>🐦 烏鴉：停在作物上，8 秒內沒點那塊田就會被吃掉。買稻草人就不會來。</li>
+        <li>🎃 偶爾會長出 <b>巨無霸南瓜</b>，要 <b>兩個人 3 秒內都點一下</b> 才搬得動，賣 $800。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🐮 牧場和釣魚</summary>
+      <ul>
+        <li>動物在結算畫面買。點牧場：沒吃東西就 <b>餵</b>（每隻 $3），有產出就 <b>收</b>。每天早上要重新餵。</li>
+        <li>🐔 雞蛋、🐄 牛奶、🐑 羊毛可以直接賣；🐖 <b>生豬肉不能直接賣</b>，要烤成 🍖。</li>
+        <li>🎣 點店門口的池塘可以釣魚，<b>鮮魚要炸過</b>才能賣，偶爾會釣到寶箱。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🍳 加工</summary>
+      <ul>
+        <li>加工機上畫的是 <b>做出來的東西</b>。點一下：有成品就拿走，沒有就 <b>從貨架拿一份原料</b> 開始做（每台最多排 3 份）。</li>
+        <li>機器分三區：🍞 烘焙區（麵粉、麵包、漢堡、披薩、蛋糕）、🥫 蔬果加工、🧀 乳品・肉・魚。</li>
+        <li>加工品賣得比原料貴很多，漢堡、蛋糕、披薩要好幾種原料，最值錢。</li>
+        <li>不知道缺什麼就打開 <b>🗄️ 庫存</b>：少的排前面，紅色是沒貨，每台機器缺的原料也會標紅。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🧑‍🤝‍🧑 客人和店</summary>
+      <ul>
+        <li>客人頭上寫著要買什麼，下面的條是 <b>耐心</b>，等太久會生氣離開、評價下降。</li>
+        <li>⚡ 急躁客小費多但沒耐心、💎 大戶一次買很多、🎩 美食家只買加工品、🌟 名人服務好評價大漲。</li>
+        <li><b>連擊</b>：上一位結完 8 秒內再結下一位，整筆多 5%（最多 +25%）。</li>
+        <li><b>📋 訂單板</b> 每天一張大訂單，點它交貨（先拿身上的再拿貨架），交齊領獎金。</li>
+        <li>🥷 <b>小偷</b>：溜到收銀台旁邊，10 秒內點他就能抓到，不然會偷錢。養看門狗會自動趕走他。</li>
+        <li>⭐ 評價越高客人越多、小費越多。價格可以在 📋 管理 調，便宜客人多，貴的賺比較多。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🌙 每天結算和成長</summary>
+      <ul>
+        <li>每天結束會看到收入、賣了什麼、明天的 <b>天氣</b>（下雨不用澆水、暴風雨會打壞田裡的作物）。</li>
+        <li>結算畫面可以買：<b>升級、解鎖新作物和機器、動物、設施和寵物、帽子、裝潢</b>。</li>
+        <li>📋 管理裡可以雇 <b>幫手</b>：農夫（種田）、牧場工（餵動物）、店員（結帳），每天要付工資。</li>
+        <li>每季第 4 天是 <b>節慶</b>，客人特別多，記得先備貨。</li>
+        <li>大家都按「準備好了」就會進到隔天。</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🏆 目標</summary>
+      <ul>
+        <li>📋 管理裡有一串目標，達成就有獎金。</li>
+        <li><b>最終目標：第 30 天結束前存到 $5,000。</b>時間到了沒達成也可以繼續玩。</li>
+      </ul>
+    </details>
+
+    <p class="sub">💡 小技巧：一個人顧農場、一個人顧店最順手；人少的話先雇幫手。</p>
   </div>
 </div>
 
