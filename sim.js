@@ -7,6 +7,7 @@ const PATIENCE = 60;
 const MAX_PLAYERS = 4;
 const WET_TIME = 30;              // 澆一次水能撐幾秒
 const WITHER_TIME = 60;           // 沒水超過幾秒就枯萎
+const GIANT_CHANCE = 0.01, GIANT_PRICE = 800;   // 南瓜成熟時變成巨無霸的機率、賣價
 
 // 季節：每 SEASON_LEN 天換一季；每季第 FESTIVAL_DAY 天是節慶
 const SEASONS = [
@@ -293,19 +294,23 @@ function stockOf(S, k) {
   return n;
 }
 
-// 現在拿得到的東西：作物要「這一季能種（或有溫室）」或「田裡正在長」；
-// 加工品要「機器正在做」或「每種原料都拿得到」（麵包 → 麵粉 → 小麥 會一路往回查）
+// 加工時能用的數量：作物連同金星作物一起算（金星的也能拿去加工）
+const usableStock = (S, k) => stockOf(S, k) + (CROPS[k] ? stockOf(S, goldOf(k)) : 0);
+
+// 現在拿得到 need 個的東西：
+// 存貨夠就算；作物要「這一季能種」或「田裡正在長」（溫室只看有沒有真的種下去）；
+// 加工品要「機器正在做」或「每種原料都拿得到一份的量」（麵包 → 麵粉 → 小麥 會一路往回查）；
 // 動物產品要有養那種動物；金星作物只有存貨才算
-function obtainable(S, k) {
-  if (stockOf(S, k) > 0) return true;
+function obtainable(S, k, need = 1) {
+  if (usableStock(S, k) >= need) return true;
   if (GOLD[k]) return false;
   if (k === 'fish') return true;
   if (GOODS[k]) return S.animals[GOODS[k].animal].count > 0;
   if (!S.unlocked[k]) return false;
-  if (CROPS[k]) return inSeason(S, k) || !!S.owned.greenhouse || S.plots.some(pl => pl.crop === k && !pl.dead);
+  if (CROPS[k]) return inSeason(S, k) || S.plots.some(pl => pl.crop === k && !pl.dead);
   const mi = machineIndex(k);
   if (mi >= 0 && S.machines[mi].input > 0) return true;
-  return Object.keys(PRODUCTS[k].inputs).every(i => obtainable(S, i));
+  return Object.entries(PRODUCTS[k].inputs).every(([i, n]) => obtainable(S, i, n));
 }
 
 // 客人會直接買、而且現在拿得到的東西（中間材料像麵粉、生肉、生魚不算）
@@ -816,12 +821,12 @@ function liftGiant(S, p, pl) {
   pl.lift[p.npc ? 'npc' : p.id] = S.t;
   const lifters = Object.values(pl.lift).filter(t => S.t - t <= 3).length;
   if (lifters < 2 && onlinePlayers(S).length > 1) return say(S, p, '巨無霸南瓜！要另一個人 3 秒內也點一下才搬得動');
-  S.money += 300;
-  S.stats.income += 300;
+  S.money += GIANT_PRICE;
+  S.stats.income += GIANT_PRICE;
   S.stats.giants++;
   S.giants++;
   changeRating(S, 0.1);
-  addFx(S, pl.x, pl.y - 0.6, '巨無霸南瓜賣了 $300！', '#ffca28', 'order');
+  addFx(S, pl.x, pl.y - 0.6, `巨無霸南瓜賣了 $${GIANT_PRICE}！`, '#ffca28', 'order');
   clearPlot(pl);
 }
 
@@ -897,12 +902,22 @@ function tapMachine(S, p, a) {
     return addFx(S, a.x, a.y - 0.6, `+${take}${prod.emoji}`, '#c5e1a5', 'harvest');
   }
   if (m.input >= MACHINE_QUEUE) return say(S, p, `${def.name}排滿了`);
-  const missing = Object.entries(prod.inputs).filter(([k, n]) => S.shelves[k] + p.carry[k] < n);
+  // 每種原料可以從這些地方拿：貨架上的普通品 → 身上的普通品 → 貨架上的金星品 → 身上的金星品
+  const sources = k => {
+    const list = [[S.shelves, k], [p.carry, k]];
+    if (CROPS[k]) list.push([S.shelves, goldOf(k)], [p.carry, goldOf(k)]);
+    return list;
+  };
+  const have = k => sources(k).reduce((n, [box, key]) => n + box[key], 0);
+  const missing = Object.entries(prod.inputs).filter(([k, n]) => have(k) < n);
   if (missing.length) return say(S, p, '架上不夠：' + missing.map(([k, n]) => `${ITEMS[k].name}×${n}`).join('、'));
   for (const [k, n] of Object.entries(prod.inputs)) {
-    const fromShelf = Math.min(n, S.shelves[k]);
-    S.shelves[k] -= fromShelf;
-    p.carry[k] -= n - fromShelf;
+    let left = n;
+    for (const [box, key] of sources(k)) {
+      const take = Math.min(left, box[key]);
+      box[key] -= take;
+      left -= take;
+    }
   }
   m.input++;
   addFx(S, a.x - 1, a.y - 0.3, `${recipeText(def.product)} → ${prod.emoji}`, '#c5e1a5', 'plant');
@@ -1033,7 +1048,7 @@ function stepPlots(S, dt) {
     if (wetAll || pl.wet > 0) {
       if (!pl.bug) pl.g = Math.min(1, pl.g + dt * soil / CROPS[pl.crop].grow);
       pl.dry = 0;
-      if (pl.g >= 1 && pl.crop === 'pumpkin' && Math.random() < 0.15) {
+      if (pl.g >= 1 && pl.crop === 'pumpkin' && Math.random() < GIANT_CHANCE) {
         pl.giant = true;
         addFx(S, pl.x, pl.y - 0.6, '🎃 長出巨無霸南瓜了！', '#ffca28', 'up');
       }

@@ -194,8 +194,10 @@
       rc.textContent = '一份要：';
       for (const [k, n] of Object.entries(prod.inputs)) {
         const span = document.createElement('span');
-        span.className = S.shelves[k] >= n ? 'have' : 'miss';
-        span.textContent = `${ITEMS[k].emoji}${ITEMS[k].name}×${n}（架上 ${S.shelves[k]}） `;
+        // 作物的話金星品也能用，一起算
+        const gold = CROPS[k] ? S.shelves[goldOf(k)] : 0, onShelf = S.shelves[k] + gold;
+        span.className = onShelf >= n ? 'have' : 'miss';
+        span.textContent = `${ITEMS[k].emoji}${ITEMS[k].name}×${n}（架上 ${onShelf}${gold ? `，含金星 ${gold}` : ''}） `;
         rc.appendChild(span);
       }
       row.querySelector('.bar i').style.width = `${Math.round(m.p * 100)}%`;
