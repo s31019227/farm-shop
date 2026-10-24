@@ -43,12 +43,12 @@ const ITEMS = { ...CROPS, ...PRODUCTS };      // 所有能拿、能上架、能�
 const ITEM_KEYS = Object.keys(ITEMS);
 const zeroItems = () => Object.fromEntries(ITEM_KEYS.map(k => [k, 0]));
 
-// 每一季客人特別愛買的東西（需求變 3 倍）
+// 每一季客人特別愛買的東西（需求變 3 倍），都是那一季種得出來的
 const SEASON_HOT = [
-  ['strawberry', 'jam', 'tomato'],
-  ['juice', 'ketchup', 'corn'],
+  ['strawberry', 'jam', 'juice'],
+  ['ketchup', 'corn', 'pumpkin'],
   ['pumpkin', 'soup', 'bread'],
-  ['soup', 'bread', 'juice'],
+  ['juice', 'bread', 'carrot'],
 ];
 
 // 加工機：每台做一種商品，放得下 MACHINE_IN 個原料、MACHINE_OUT 個成品
@@ -159,10 +159,29 @@ const itemList = (items, sep = ' ') => ITEM_KEYS.filter(k => items[k]).map(k => 
 
 function gameHour(t) { return 6 + t / DAY_LEN * 16; }
 
-// 客人會買、而且現在做得出來的東西
+// 手上、貨架上、機器裡（還沒拿走的成品）總共有幾個
+function stockOf(S, k) {
+  let n = S.shelves[k] || 0;
+  for (const p of Object.values(S.players)) n += p.carry[k] || 0;
+  const mi = machineIndex(k);
+  if (mi >= 0) n += S.machines[mi].out;
+  return n;
+}
+
+// 現在拿得到的東西：作物要「這一季能種」或「還有存貨／田裡正在長」；
+// 加工品要「還有存貨」或「原料拿得到」（麵包 → 麵粉 → 小麥 會一路往回查）
+function obtainable(S, k) {
+  if (!S.unlocked[k]) return false;
+  if (stockOf(S, k) > 0) return true;
+  if (CROPS[k]) return inSeason(S, k) || S.plots.some(pl => pl.crop === k && !pl.dead);
+  const mi = machineIndex(k);
+  if (mi >= 0 && S.machines[mi].input >= PRODUCTS[k].need) return true;   // 機器裡正在做
+  return obtainable(S, PRODUCTS[k].from);
+}
+
+// 客人會直接買、而且現在拿得到的東西（中間材料像麵粉不算）
 function sellable(S, k) {
-  if (CROPS[k]) return !!S.unlocked[k];
-  return !PRODUCTS[k].noDemand && !!S.unlocked[k];
+  return !(PRODUCTS[k] && PRODUCTS[k].noDemand) && obtainable(S, k);
 }
 
 function isWall(x, y) {
@@ -419,11 +438,9 @@ function sendAway(c) {
 
 // ---------- 特殊訂單 ----------
 function newOrder(S) {
-  const pool = ITEM_KEYS.filter(k => sellable(S, k));
-  const hot = SEASON_HOT[seasonOf(S.day)];
-  // 當季熱門的東西排前面，比較容易被選進訂單
-  pool.sort(() => Math.random() - 0.5).sort((a, b) => hot.includes(b) - hot.includes(a));
-  const kinds = pool.slice(0, Math.min(pool.length, S.day >= 6 ? 3 : 2));
+  // 跟客人一樣隨機挑，當季熱門的比較容易被選到
+  const kinds = new Set();
+  for (let i = 0; i < (S.day >= 6 ? 3 : 2); i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
   const need = {};
   let value = 0;
   for (const k of kinds) {
@@ -627,8 +644,9 @@ function spawnCustomer(S) {
     want[pick(pool)] = 1;
     if (pool.length > 1 && Math.random() < 0.4) want[pick(pool)] = 1;
   } else {
-    const kinds = new Set();
-    kinds.add(pickWanted(S, kinds));
+    const kinds = new Set(), first = pickWanted(S, kinds);
+    if (!first) return;          // 現在什麼都拿不到就先不來客人
+    kinds.add(first);
     const extra = type === 'big' ? 2 : Math.random() < 0.35 ? 1 : 0;
     for (let i = 0; i < extra; i++) { const k = pickWanted(S, kinds); if (k) kinds.add(k); }
     for (const k of kinds) {
