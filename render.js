@@ -185,7 +185,7 @@ function drawPlots(g, S, time) {
     g.strokeStyle = 'rgba(255,255,255,0.8)';
     g.lineWidth = 1.5;
     g.strokeRect(1.6 * TILE, (GREENHOUSE_Y - 0.15) * TILE, 7.8 * TILE, 1.3 * TILE);
-    label(g, '🏡 溫室', 1.6 * TILE + 22, (GREENHOUSE_Y - 0.15) * TILE, 8, '#fff', 'rgba(0,96,100,0.8)');
+    label(g, '🏡 溫室（都算當季）', 1.6 * TILE + 38, (GREENHOUSE_Y - 0.15) * TILE, 8, '#fff', 'rgba(0,96,100,0.8)');
   }
   if (S.owned.scarecrow) emoji(g, '🪆', (SCARECROW[0] + 0.5) * TILE, (SCARECROW[1] + 0.5) * TILE, 22);
   S.plots.forEach((pl, i) => {

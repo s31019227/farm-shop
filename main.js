@@ -508,7 +508,7 @@
     else if (S.day >= FINAL_DAY) notes.push(`沒在 ${FINAL_DAY} 天內存到 $5,000，不過可以繼續經營`);
     else notes.push(`🏆 最終目標：再 ${FINAL_DAY - S.day} 天內存到 $5,000（還差 $${Math.max(0, 5000 - S.money)}）`);
     if (next !== seasonOf(S.day)) {
-      notes.push(`${SEASONS[next].icon} 明天開始是${SEASONS[next].name}天！可以種：${CROP_KEYS.filter(k => CROPS[k].seasons.includes(next)).map(k => CROPS[k].emoji + CROPS[k].name).join('、')}`);
+      notes.push(`${SEASONS[next].icon} 明天開始是${SEASONS[next].name}天！當季長得快的：${CROP_KEYS.filter(k => CROPS[k].seasons.includes(next)).map(k => CROPS[k].emoji + CROPS[k].name).join('、')}`);
     }
     setText('sum-season', notes.join('\n'));
 
@@ -575,26 +575,22 @@
   }
 
   // ---------- 遊戲中的按鈕 ----------
-  // 種子按鈕只放已經解鎖的作物，不是這一季的就反灰
+  // 種子按鈕只放已經解鎖的作物；當季的標上 ⚡（長得比較快）
   let seedSig = '';
   function updateSeeds() {
     const season = seasonOf(S.day);
     const keys = CROP_KEYS.filter(k => S.unlocked[k]);
-    const sig = keys.join() + '|' + season + '|' + !!S.owned.greenhouse;
+    const sig = keys.join() + '|' + season;
     if (sig === seedSig) return;
     seedSig = sig;
     const seeds = $('seeds');
     seeds.innerHTML = '';
     for (const k of keys) {
-      const c = CROPS[k], b = document.createElement('button');
+      const c = CROPS[k], b = document.createElement('button'), hot = c.seasons.includes(season);
       b.dataset.crop = k;
-      b.innerHTML = `${c.emoji} <span class="seed-name">${c.name}種子</span> $${c.seed}`;
-      b.title = `${c.name}種子（${c.seasons.map(i => SEASONS[i].name).join('、')}天可以種）`;
-      // 有溫室的話不合季節的種子也能選（只能種在溫室那排）
-      const off = !c.seasons.includes(season);
-      b.disabled = off && !S.owned.greenhouse;
-      b.classList.toggle('greenhouse-only', off && !!S.owned.greenhouse);
-      if (off && S.owned.greenhouse) b.title += '（現在只能種在溫室）';
+      b.innerHTML = `${hot ? '⚡' : ''}${c.emoji} <span class="seed-name">${c.name}種子</span> $${c.seed}`;
+      b.title = `${c.name}種子（${c.seasons.map(i => SEASONS[i].name).join('、')}天是當季，長得比較快）`;
+      b.classList.toggle('in-season', hot);
       b.onclick = () => sendInput({ t: 'seed', c: k });
       seeds.appendChild(b);
     }

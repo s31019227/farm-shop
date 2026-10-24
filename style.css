@@ -176,7 +176,7 @@ html, body {
   pointer-events: auto;
 }
 #tutorial .link { color: #6d4c41; flex: none; }
-#seeds button.greenhouse-only { border-style: dashed; opacity: 0.8; }
+#seeds button.in-season { background: #3f5a2a; }
 #btn-music { padding: 2px 8px; margin-left: auto; }
 #btn-music + #btn-mute { margin-left: 0; }
 #btn-music.off { opacity: 0.45; }

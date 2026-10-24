@@ -28,7 +28,8 @@ const WEATHERS = {
 const WEATHER_KEYS = Object.keys(WEATHERS);
 const STORM_HOUR = 15;
 
-// seasons：哪幾季可以種（0 春 1 夏 2 秋 3 冬）
+// 每種作物一年四季都能種；seasons 是它的「當季」（0 春 1 夏 2 秋 3 冬），當季長得比較快
+const SEASON_BOOST = 1.6;
 const CROPS = {
   tomato: { name: '番茄', emoji: '🍅', seed: 3, price: 10, grow: 15, yield: 2, seasons: [0, 1] },
   carrot: { name: '紅蘿蔔', emoji: '🥕', seed: 6, price: 18, grow: 25, yield: 2, seasons: [0, 2, 3] },
@@ -158,7 +159,7 @@ const HELPER_KEYS = Object.keys(HELPERS);
 
 // 店面和農場的設施：在結算畫面買，買了就一直有
 const FACILITIES = {
-  greenhouse: { name: '溫室', icon: '🏡', cost: 600, desc: '最下面那排農地蓋上溫室，一年四季什麼都能種' },
+  greenhouse: { name: '溫室', icon: '🏡', cost: 600, desc: '最下面那排農地蓋上溫室：什麼作物都用當季的速度長，暴風雨也打不到' },
   scarecrow: { name: '稻草人', icon: '🪆', cost: 150, desc: '烏鴉不會再來偷吃作物' },
   dog: { name: '看門狗', icon: '🐕', cost: 300, desc: '小偷一進門就會被牠嚇跑' },
   cat: { name: '店貓', icon: '🐈', cost: 250, desc: '在店裡走來走去，客人耐心 +10%' },
@@ -290,7 +291,7 @@ function stockOf(S, k) {
 }
 
 // 現在拿得到 need 個的東西：
-// 存貨夠就算；作物要「這一季能種」或「田裡正在長」（溫室只看有沒有真的種下去）；
+// 存貨夠就算；作物只要解鎖了隨時都能種；
 // 加工品要「機器正在做」或「每種原料都拿得到一份的量」（麵包 → 麵粉 → 小麥 會一路往回查）；
 // 動物產品要有養那種動物
 function obtainable(S, k, need = 1) {
@@ -298,7 +299,7 @@ function obtainable(S, k, need = 1) {
   if (k === 'fish') return true;
   if (GOODS[k]) return S.animals[GOODS[k].animal].count > 0;
   if (!S.unlocked[k]) return false;
-  if (CROPS[k]) return inSeason(S, k) || S.plots.some(pl => pl.crop === k && !pl.dead);
+  if (CROPS[k]) return true;
   const mi = machineIndex(k);
   if (mi >= 0 && S.machines[mi].input > 0) return true;
   return Object.entries(PRODUCTS[k].inputs).every(([i, n]) => obtainable(S, i, n));
@@ -613,11 +614,12 @@ function setHelper(S, p, kind, hire) {
   }
 }
 
-// 現在能種的作物裡，存貨（加上田裡正在長的）最少的那一種
+// 已解鎖的作物裡，存貨（加上田裡正在長的）最少的那一種；差不多少的話優先挑當季的（長得快）
 function farmerCrop(S) {
   const growing = k => S.plots.filter(pl => pl.crop === k && !pl.dead).length * CROPS[k].yield;
-  const opts = CROP_KEYS.filter(k => S.unlocked[k] && inSeason(S, k) && S.money >= CROPS[k].seed);
-  opts.sort((a, b) => (stockOf(S, a) + growing(a)) - (stockOf(S, b) + growing(b)));
+  const score = k => stockOf(S, k) + growing(k) - (inSeason(S, k) ? 3 : 0);
+  const opts = CROP_KEYS.filter(k => S.unlocked[k] && S.money >= CROPS[k].seed);
+  opts.sort((a, b) => score(a) - score(b));
   return opts[0] || null;
 }
 
@@ -835,7 +837,6 @@ function tapPlot(S, p, i) {
   if (!pl.crop) {
     const c = CROPS[p.seed];
     if (!S.unlocked[p.seed]) return say(S, p, `還沒解鎖${c.name}`);
-    if (!inSeason(S, p.seed) && !isGreenhouse(S, i)) return say(S, p, `${SEASONS[seasonOf(S.day)].name}天不能種${c.name}${S.owned.greenhouse ? '（可以種在溫室）' : ''}`);
     if (S.money < c.seed) return say(S, p, '錢不夠買種子');
     S.money -= c.seed;
     S.stats.seedSpent += c.seed;
@@ -1027,7 +1028,9 @@ function stepPlots(S, dt) {
     // 第 3 天起偶爾會長蟲，有蟲就不會長
     if (!pl.bug && S.day >= 3 && Math.random() < dt / 1500) pl.bug = true;
     if (wetAll || pl.wet > 0) {
-      if (!pl.bug) pl.g = Math.min(1, pl.g + dt * soil / CROPS[pl.crop].grow);
+      // 當季（或在溫室裡）長得比較快
+      const boost = inSeason(S, pl.crop) || isGreenhouse(S, i) ? SEASON_BOOST : 1;
+      if (!pl.bug) pl.g = Math.min(1, pl.g + dt * soil * boost / CROPS[pl.crop].grow);
       pl.dry = 0;
       if (pl.g >= 1 && pl.crop === 'pumpkin' && Math.random() < GIANT_CHANCE) {
         pl.giant = true;
