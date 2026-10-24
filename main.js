@@ -129,16 +129,80 @@
   $('btn-start').onclick = () => { if (mode === 'host' && allReady(S)) startGame(S); };
 
   // ---------- 管理面板和快捷聊天 ----------
-  const sheet = $('upg-sheet'), chatMenu = $('chat-menu'), backdrop = $('backdrop');
-  // popup = 'sheet'、'chat' 或 null；同時只開一個，開著的時候墊一層背景，點空白處就關掉
+  const sheet = $('upg-sheet'), stockSheet = $('stock-sheet'), chatMenu = $('chat-menu'), backdrop = $('backdrop');
+  // popup = 'sheet'（管理）、'stock'（庫存）、'chat' 或 null；同時只開一個，開著的時候墊一層背景，點空白處就關掉
   function setPopup(which) {
     sheet.classList.toggle('open', which === 'sheet');
+    stockSheet.classList.toggle('open', which === 'stock');
     chatMenu.classList.toggle('hidden', which !== 'chat');
     backdrop.classList.toggle('hidden', !which);
   }
-  const popupOpen = () => sheet.classList.contains('open') || !chatMenu.classList.contains('hidden');
+  const popupOpen = () => sheet.classList.contains('open') || stockSheet.classList.contains('open') || !chatMenu.classList.contains('hidden');
   $('btn-upg-toggle').onclick = () => setPopup(sheet.classList.contains('open') ? null : 'sheet');
   $('btn-upg-close').onclick = () => setPopup(null);
+  $('btn-stock').onclick = () => setPopup(stockSheet.classList.contains('open') ? null : 'stock');
+  $('btn-stock-close').onclick = () => setPopup(null);
+
+  // ---------- 庫存面板 ----------
+  const STOCK_GROUPS = [
+    ['🌱 作物', k => CROPS[k]],
+    ['🌟 金星作物', k => GOLD[k]],
+    ['🐮 牧場、池塘', k => GOODS[k]],
+    ['🍳 加工品、料理', k => PRODUCTS[k]],
+  ];
+  let stockSig = '';
+  function updateStock() {
+    if (!stockSheet.classList.contains('open')) return;
+    const sig = JSON.stringify([S.shelves, S.machines, S.unlocked, S.upg.machine]);
+    if (sig === stockSig) return;
+    stockSig = sig;
+
+    const list = $('stock-list');
+    list.innerHTML = '';
+    for (const [title, test] of STOCK_GROUPS) {
+      const keys = ITEM_KEYS.filter(k => test(k) && S.shelves[k] > 0);
+      if (!keys.length) continue;
+      const group = document.createElement('div');
+      group.className = 'stock-group';
+      group.innerHTML = '<b></b><div class="stock-items"></div>';
+      group.querySelector('b').textContent = title;
+      for (const k of keys) {
+        const it = ITEMS[k], el = document.createElement('div');
+        el.className = 'stock-item';
+        el.innerHTML = '<span class="em"></span><span class="nm"></span><span class="ct"></span>';
+        el.querySelector('.em').textContent = it.emoji;
+        el.querySelector('.nm').textContent = it.name + (it.noDemand ? '（要加工）' : '');
+        el.title = it.noDemand ? `${it.name}不能直接賣，要拿去加工` : `${it.name}，每個 $${priceOf(S, k)}`;
+        el.querySelector('.ct').textContent = S.shelves[k];
+        group.lastChild.appendChild(el);
+      }
+      list.appendChild(group);
+    }
+    if (!list.children.length) list.innerHTML = '<p class="stock-empty">貨架是空的</p>';
+
+    // 加工機：做什麼、要什麼原料（架上有幾個）、排了幾份、做好幾個
+    const ml = $('machine-list');
+    ml.innerHTML = '';
+    MACHINES.forEach((def, i) => {
+      if (!S.unlocked[def.product]) return;
+      const m = S.machines[i], prod = PRODUCTS[def.product], row = document.createElement('div');
+      row.className = 'machine-row' + (m.out ? ' ready' : '');
+      row.innerHTML = '<div class="top"><span></span><span></span></div><div class="rc"></div><div class="bar"><i></i></div>';
+      row.querySelector('.top span').textContent = `${def.icon} ${def.name} → ${prod.emoji} ${prod.name}`;
+      row.querySelector('.top span:last-child').textContent = m.out ? `✅ 做好 ${m.out} 個` : m.input ? `製作中（排 ${m.input} 份）` : '閒置';
+      const rc = row.querySelector('.rc');
+      rc.textContent = '一份要：';
+      for (const [k, n] of Object.entries(prod.inputs)) {
+        const span = document.createElement('span');
+        span.className = S.shelves[k] >= n ? 'have' : 'miss';
+        span.textContent = `${ITEMS[k].emoji}${ITEMS[k].name}×${n}（架上 ${S.shelves[k]}） `;
+        rc.appendChild(span);
+      }
+      row.querySelector('.bar i').style.width = `${Math.round(m.p * 100)}%`;
+      ml.appendChild(row);
+    });
+    if (!ml.children.length) ml.innerHTML = '<p class="stock-empty">還沒有解鎖的加工機</p>';
+  }
   $('btn-chat').onclick = () => setPopup(chatMenu.classList.contains('hidden') ? 'chat' : null);
   backdrop.addEventListener('pointerdown', e => { e.preventDefault(); setPopup(null); });
   CHAT.forEach((text, i) => {
@@ -906,6 +970,7 @@
       updateHud(dt);
       updateBar();
       updatePanel();
+      updateStock();
       updateTutorial();
       playNewSounds();
       scheduleMusic();

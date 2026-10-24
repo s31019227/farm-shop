@@ -73,13 +73,14 @@ html, body {
 
 /* 工具列：種子常駐在左邊，右邊是聊天和管理面板的按鈕 */
 #bar { flex-wrap: nowrap; justify-content: space-between; position: relative; }
-#seeds { flex-wrap: nowrap; overflow-x: auto; min-width: 0; }
+#seeds { flex-wrap: nowrap; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+#seeds::-webkit-scrollbar { display: none; }
 #seeds button { flex: none; }
 .bar-right { display: flex; gap: 8px; flex: none; }
 #btn-upg-toggle.has { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* 管理面板：從底下彈出來，可以收回去 */
-#upg-sheet {
+.sheet {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -97,8 +98,8 @@ html, body {
   transform: translateY(105%);
   transition: transform 0.22s ease;
 }
-#upg-sheet.open { transform: translateY(0); }
-#upg-sheet h4 { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
+.sheet.open { transform: translateY(0); }
+.sheet h4 { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-note { margin: 0; font-size: 13px; color: var(--muted); }
 #upgrades button { padding: 9px 12px; text-align: left; }
@@ -109,6 +110,24 @@ html, body {
 #goals li.done { opacity: 0.6; text-decoration: line-through; }
 #goals li.final { border: 1px solid var(--accent); }
 #hint { font-size: 13px; }
+
+/* 庫存面板 */
+#stock-list { display: flex; flex-direction: column; gap: 8px; }
+.stock-group b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.stock-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
+.stock-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--panel-2); border-radius: 8px; font-size: 14px; }
+.stock-item .em { font-size: 18px; }
+.stock-item .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stock-item .ct { font-weight: bold; color: var(--accent); }
+.stock-empty { color: var(--muted); font-size: 13px; }
+.machine-row { padding: 7px 10px; background: var(--panel-2); border-radius: 8px; font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
+.machine-row .top { display: flex; justify-content: space-between; gap: 8px; }
+.machine-row .rc { font-size: 13px; color: var(--muted); }
+.machine-row .miss { color: #ef9a9a; }
+.machine-row .have { color: #a5d6a7; }
+.machine-row.ready { border: 1px solid var(--accent); }
+.machine-row .bar { height: 4px; background: rgba(0, 0, 0, 0.35); border-radius: 2px; overflow: hidden; }
+.machine-row .bar i { display: block; height: 100%; background: var(--accent); }
 
 /* 快捷聊天選單 */
 .popover {
@@ -166,7 +185,7 @@ html, body {
 @media (max-width: 760px), (pointer: coarse) {
   #seeds button { padding: 8px 12px; }
   .seed-name { display: none; }
-  #upg-sheet { max-height: 52dvh; gap: 6px; padding-top: 10px; }
+  .sheet { max-height: 52dvh; gap: 6px; padding-top: 10px; }
   .sheet-head { position: sticky; top: -10px; background: var(--panel); padding: 2px 0 6px; z-index: 1; }
   #upgrades button { padding: 7px 10px; font-size: 13px; }
   #goals { font-size: 13px; }

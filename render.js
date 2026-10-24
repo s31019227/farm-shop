@@ -282,17 +282,19 @@ function drawShopObjects(g, S, time) {
 
   MACHINES.forEach((def, i) => {
     const m = S.machines[i], prod = PRODUCTS[def.product], x = def.x * TILE, y = def.y * TILE;
+    // 機器上畫「做出來的東西」，左上角小小的是機器本身
     if (!S.unlocked[def.product]) {
       roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 4, 'rgba(84,110,122,0.55)');
       g.globalAlpha = 0.4;
-      emoji(g, def.icon, x + TILE / 2, y + TILE / 2, 15);
+      emoji(g, prod.emoji, x + TILE / 2, y + TILE / 2, 16);
       g.globalAlpha = 1;
       emoji(g, '🔒', x + TILE - 7, y + 7, 10);
       return;
     }
-    roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 4, '#78909c');
+    roundRect(g, x + 1, y + 1, TILE - 2, TILE - 2, 4, m.out ? '#8d9f5a' : '#78909c');
     const working = m.input > 0 && m.out < MACHINE_OUT;
-    emoji(g, def.icon, x + TILE / 2, y + 11 + (working ? Math.sin(time * 20) * 0.8 : 0), 15);
+    emoji(g, prod.emoji, x + TILE / 2 + 2, y + 13 + (working ? Math.sin(time * 20) * 0.8 : 0), 17);
+    if (def.icon !== prod.emoji) emoji(g, def.icon, x + 7, y + 7, 9);
     g.fillStyle = 'rgba(0,0,0,0.45)';
     g.fillRect(x + 4, y + TILE - 6, TILE - 8, 3);
     g.fillStyle = '#ffca28';

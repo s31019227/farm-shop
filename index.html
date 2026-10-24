@@ -38,14 +38,23 @@
   <footer id="bar">
     <div id="seeds" class="group"></div>
     <div class="bar-right">
+      <button id="btn-stock" title="看貨架和加工機">🗄️ 庫存</button>
       <button id="btn-chat" title="快捷聊天">💬</button>
       <button id="btn-upg-toggle">📋 管理</button>
     </div>
     <!-- 面板或聊天選單打開時蓋住整個畫面，點任何空白處就收起來 -->
     <div id="backdrop" class="hidden"></div>
     <div id="chat-menu" class="popover hidden"></div>
+    <!-- 庫存面板：貨架上每樣東西的名字和數量，加上每台加工機在做什麼 -->
+    <div id="stock-sheet" class="sheet">
+      <div class="sheet-head"><b>🗄️ 庫存</b><button id="btn-stock-close">收起 ▼</button></div>
+      <h4>貨架上</h4>
+      <div id="stock-list"></div>
+      <h4>加工機</h4>
+      <div id="machine-list" class="col"></div>
+    </div>
     <!-- 從底下彈出來的管理面板：價格、升級、目標 -->
-    <div id="upg-sheet">
+    <div id="upg-sheet" class="sheet">
       <div class="sheet-head"><b>📋 管理</b><button id="btn-upg-close">收起 ▼</button></div>
       <h4>💲 全店價格</h4>
       <div id="price" class="seg"></div>
